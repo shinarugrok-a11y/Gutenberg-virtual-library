@@ -6,6 +6,7 @@ import { useDesk } from "@/lib/desk-store";
 import { frequency, type Card, type Order } from "@/lib/shelf";
 import { composeBook } from "@/lib/text";
 import { Shelf } from "@/components/shelf";
+import { SpineWall } from "@/components/cloth-spine";
 import { BookStage } from "@/components/book-stage";
 import { AskPanel } from "@/components/ask-panel";
 import { Winamp } from "@/components/winamp";
@@ -37,6 +38,8 @@ export function Desk() {
   const [spinError, setSpinError] = useState<string | null>(null);
   const motionOn = useDesk((s) => s.motion !== false);
   const setMotion = useDesk((s) => s.setMotion);
+  const atmosphere = useDesk((s) => s.atmosphere);
+  const setAtmosphere = useDesk((s) => s.setAtmosphere);
   const storageWarning = useDesk((s) => s.storageWarning);
   const stopAir = useCallback(() => setOnAir(false), []);
 
@@ -95,13 +98,16 @@ export function Desk() {
   const bookError = textQuery.data && !textQuery.data.ok ? textQuery.data.error : textQuery.isError ? "The pages didn't come up." : null;
   const freq = card ? frequency(card.id) : "91.1";
   const now = card ? card.title : "The whole Gutenberg shelf";
+  const pickingBand = order === "genre" && !genre;
 
   return (
-    <div className="desk" data-motion={motionOn ? "on" : "off"} data-on-air={onAir ? "true" : "false"}>
+    <div className="desk" data-motion={motionOn ? "on" : "off"} data-atmosphere={atmosphere} data-on-air={onAir ? "true" : "false"}>
       <header className="fascia">
         <div>
           <p className="eyebrow">Station K-GUT</p>
-          <h1 className="wordmark">Night Desk</h1>
+          <h1 className="wordmark">
+            Night Desk <em>Library</em>
+          </h1>
         </div>
         <div className="well">
           <div className="needle-wrap" aria-hidden>
@@ -138,6 +144,19 @@ export function Desk() {
           <button type="button" className={`desk-btn${motionOn ? " is-on" : ""}`} aria-pressed={motionOn} onClick={() => setMotion(!motionOn)}>
             {motionOn ? "Animation on" : "Animation off"}
           </button>
+          <label className="atmosphere">
+            Atmosphere
+            <select
+              className="desk-select compact"
+              aria-label="Atmosphere"
+              value={atmosphere}
+              onChange={(event) => setAtmosphere(event.target.value as "chalkboard" | "forest" | "vintage")}
+            >
+              <option value="chalkboard">Chalkboard</option>
+              <option value="forest">Dark forest</option>
+              <option value="vintage">Vintage</option>
+            </select>
+          </label>
         </div>
       </header>
       <div className="layout">
@@ -181,6 +200,7 @@ export function Desk() {
             onOpen={open}
             onSpin={() => void spin()}
             spinning={spinning}
+            wall={card ? "sidebar" : "narrow"}
           />
           {spinError && <p className="warn mt-2">{spinError}</p>}
         </div>
@@ -201,17 +221,17 @@ export function Desk() {
               error={bookError}
             />
           ) : (
-            <div className="closed-book">
-              <div className="page-inner title-leaf">
-                <p className="page-kicker">K-GUT</p>
-                <h2>The desk is clear.</h2>
-                <p className="page-prose">
-                  Spin the dial or pick a book. Title order, author order, and genre walk the whole Project Gutenberg text catalog. Borrowed is the live most-read list.
-                </p>
-                <button type="button" className="desk-btn is-on mt-4" onClick={() => setPane("tune")}>
-                  Open the shelf
-                </button>
-              </div>
+            <div className="panel wall-stage only-wide">
+              <p className="eyebrow">The collection</p>
+              <h2 className="wall-title">A quiet place to lose your place.</h2>
+              <p className="text-muted wall-lede">
+                Cloth spines on the shelf. Open one and the ink stays on the page — pen, pencil, brush, the same five colors.
+              </p>
+              {pickingBand ? (
+                <p className="text-muted mt-4 text-sm">Choose a band in the catalog. The shelf will stand up in that order.</p>
+              ) : (
+                <SpineWall books={shelf?.books ?? []} activeId={null} onOpen={open} perShelf={18} tall />
+              )}
             </div>
           )}
           {storageWarning && <p className="warn mt-2">This desk is full of ink. Download your notes before they stop saving on this browser.</p>}

@@ -3,6 +3,7 @@ import { INKS, type BookNotes, type QaTurn, type Stroke, type Tool } from "@/lib
 
 export type SkinId = "amber" | "classic" | "paper" | "nocturne" | "phosphor";
 export type LcdId = "amber" | "green" | "ice" | "paper";
+export type Atmosphere = "chalkboard" | "forest" | "vintage";
 
 type Persisted = {
   motion: boolean | null;
@@ -15,6 +16,7 @@ type Persisted = {
   tool: Tool;
   inkId: string;
   brush: number;
+  atmosphere: Atmosphere;
   notes: Record<string, BookNotes>;
 };
 
@@ -32,6 +34,7 @@ type State = Persisted & {
   setTool: (tool: Tool) => void;
   setInkId: (inkId: string) => void;
   setBrush: (brush: number) => void;
+  setAtmosphere: (atmosphere: Atmosphere) => void;
   ensureBook: (id: number, title: string, author: string) => void;
   setStrokes: (id: number, leaf: number, strokes: Stroke[]) => void;
   addComment: (id: number, leaf: number, text: string) => void;
@@ -51,6 +54,7 @@ function blank(): Persisted {
     tool: "pen",
     inkId: INKS[0]!.id,
     brush: 2.5,
+    atmosphere: "chalkboard",
     notes: {},
   };
 }
@@ -73,6 +77,7 @@ function scheduleSave() {
       tool: state.tool,
       inkId: state.inkId,
       brush: state.brush,
+      atmosphere: state.atmosphere,
       notes: state.notes,
     };
     try {
@@ -127,6 +132,10 @@ export const useDesk = create<State>((set, get) => ({
   },
   setBrush: (brush) => {
     set({ brush });
+    scheduleSave();
+  },
+  setAtmosphere: (atmosphere) => {
+    set({ atmosphere });
     scheduleSave();
   },
   ensureBook: (id, title, author) => {
@@ -187,6 +196,7 @@ export const useDesk = create<State>((set, get) => ({
       const skins: SkinId[] = ["amber", "classic", "paper", "nocturne", "phosphor"];
       const lcds: LcdId[] = ["amber", "green", "ice", "paper"];
       const tools: Tool[] = ["pen", "pencil", "brush", "marker", "eraser"];
+      const rooms: Atmosphere[] = ["chalkboard", "forest", "vintage"];
       set({
         motion: typeof data.motion === "boolean" ? data.motion : motionDefault,
         skin: skins.includes(data.skin as SkinId) ? (data.skin as SkinId) : "amber",
@@ -198,6 +208,7 @@ export const useDesk = create<State>((set, get) => ({
         tool: tools.includes(data.tool as Tool) ? (data.tool as Tool) : "pen",
         inkId: INKS.some((ink) => ink.id === data.inkId) ? (data.inkId as string) : INKS[0]!.id,
         brush: typeof data.brush === "number" ? data.brush : 2.5,
+        atmosphere: rooms.includes(data.atmosphere as Atmosphere) ? (data.atmosphere as Atmosphere) : "chalkboard",
         notes: data.notes && typeof data.notes === "object" ? data.notes : {},
       });
     } catch {

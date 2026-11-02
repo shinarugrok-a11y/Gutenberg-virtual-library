@@ -50,6 +50,11 @@
 
 .desk {
   min-height: 100dvh;
+  --shelf-bg: #1c2827;
+  --shelf-wood: #46372c;
+  --shelf-lip: #6d5646;
+  --shelf-gold: #c8aa67;
+  --shelf-muted: #b3baa8;
   background:
     radial-gradient(ellipse at 50% -10%, color-mix(in oklab, var(--color-amber) 16%, transparent), transparent 46%),
     var(--color-bg);
@@ -58,12 +63,15 @@
 .desk[data-motion="off"] .spin,
 .desk[data-motion="off"] .ticker-track,
 .desk[data-motion="off"] .needle,
-.desk[data-motion="off"] .viz-live {
+.desk[data-motion="off"] .viz-live,
+.desk[data-motion="off"] .cloth,
+.desk[data-motion="off"] .book-card {
   animation: none;
+  transition: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .spin, .ticker-track, .needle { animation: none; }
+  .spin, .ticker-track, .needle, .book-card, .cloth { animation: none; transition: none; }
 }
 
 .fascia {
@@ -90,6 +98,26 @@
   font-size: 1.85rem;
   line-height: 1;
   color: var(--color-fg);
+}
+
+.wordmark em {
+  font-style: italic;
+  font-weight: 450;
+  color: var(--color-muted);
+}
+
+.atmosphere {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--color-muted);
+  font-size: 0.82rem;
+}
+
+.desk-select.compact {
+  width: auto;
+  min-width: 9.5rem;
+  padding: 0 0.8rem;
 }
 
 .well {
@@ -205,6 +233,16 @@
   padding: 1rem 0.85rem 6.5rem;
   display: grid;
   gap: 1rem;
+  min-width: 0;
+}
+
+.layout > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+body {
+  overflow-x: clip;
 }
 
 @media (min-width: 1180px) {
@@ -217,6 +255,13 @@
   .show-wide { display: block !important; }
   .show-wide-flex { display: flex !important; }
   .tabbar { display: none; }
+  .only-narrow { display: none !important; }
+}
+
+.only-wide { display: none; }
+
+@media (min-width: 1180px) {
+  .only-wide { display: block; }
 }
 
 .panel {
@@ -224,6 +269,8 @@
   border: 1px solid var(--color-line);
   border-radius: var(--radius-desk);
   padding: 0.85rem;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .shelf-list, .genre-list {
@@ -296,6 +343,12 @@
   height: min(62dvh, 42rem);
   min-height: 24rem;
   perspective: 1800px;
+  animation: settle 420ms ease;
+}
+
+@keyframes settle {
+  from { opacity: 0.45; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
 }
 
 .book-stack {
@@ -580,18 +633,158 @@
   width: 100%;
   height: 100%;
   touch-action: none;
+  cursor: crosshair;
 }
 
 .ink-layer.is-off { pointer-events: none; }
 
 .margin-note {
-  margin-top: 1rem;
-  padding-top: 0.65rem;
-  border-top: 1px solid var(--color-paper-deep);
+  margin: 0 0 0.65rem;
+  padding: 0;
+  border: 0;
   color: #6e2430;
   font-family: var(--font-display);
   font-style: italic;
-  font-size: 0.92rem;
+  font-weight: 560;
+  font-size: 0.78rem;
+  line-height: 1.15;
+  transform: rotate(-1.6deg);
+}
+
+.page-inner.has-notes {
+  padding-right: 5.2rem;
+}
+
+.page-notes {
+  position: absolute;
+  top: 2.15rem;
+  right: 0.35rem;
+  z-index: 3;
+  width: 4.4rem;
+  pointer-events: none;
+}
+
+.wall {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-top: 0.75rem;
+  max-height: min(42dvh, 22rem);
+  overflow: auto;
+  padding-right: 0.15rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.wall.is-tall {
+  max-height: min(68dvh, 44rem);
+}
+
+.wall-stage {
+  min-height: min(72dvh, 46rem);
+  background:
+    radial-gradient(ellipse at 50% 0%, rgb(255 255 255 / 0.04), transparent 58%),
+    var(--shelf-bg);
+  border-color: color-mix(in oklab, var(--shelf-gold) 35%, transparent);
+}
+
+.desk[data-atmosphere="chalkboard"] {
+  --shelf-bg: #1c2827;
+  --shelf-wood: #46372c;
+  --shelf-lip: #6d5646;
+  --shelf-gold: #c8aa67;
+  --shelf-muted: #b3baa8;
+}
+
+.desk[data-atmosphere="forest"] {
+  --shelf-bg: #0c241c;
+  --shelf-wood: #302f1e;
+  --shelf-lip: #4a4630;
+  --shelf-gold: #c3b475;
+  --shelf-muted: #c5d0b4;
+}
+
+.desk[data-atmosphere="vintage"] {
+  --shelf-bg: #3d2c24;
+  --shelf-wood: #6b422a;
+  --shelf-lip: #8a5a38;
+  --shelf-gold: #e2bd79;
+  --shelf-muted: #f0d8b4;
+}
+
+.wall-title {
+  margin: 0.2rem 0 0.35rem;
+  font-size: clamp(1.6rem, 3vw, 2.4rem);
+}
+
+.wall-lede {
+  margin: 0;
+  max-width: 40rem;
+}
+
+.wood {
+  position: relative;
+  margin-top: 0.85rem;
+  padding: 1.85rem 0.65rem 0.35rem;
+  border-radius: 0.15rem 0.15rem 0 0;
+  background: linear-gradient(180deg, rgb(0 0 0 / 0.18), transparent 32%);
+  border-bottom: 16px solid var(--shelf-wood);
+  box-shadow: 0 8px 0 var(--shelf-lip), 0 14px 18px rgb(0 0 0 / 0.35);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.wood-label {
+  position: absolute;
+  top: 0.22rem;
+  left: 0.75rem;
+  margin: 0;
+  color: var(--shelf-muted);
+  font-family: Georgia, var(--font-display);
+  font-style: italic;
+  font-size: 0.95rem;
+}
+
+.wood-books {
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+  min-height: 196px;
+  max-width: 100%;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.cloth {
+  height: 196px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  filter: drop-shadow(3px 2px 2px rgb(0 0 0 / 0.55));
+  transform-origin: bottom center;
+  transition: transform 180ms ease;
+}
+
+.desk[data-motion="off"] .cloth {
+  transition: none;
+}
+
+.cloth:hover,
+.cloth:focus-visible {
+  transform: translateY(-8px);
+}
+
+.cloth.is-on {
+  transform: translateY(-10px);
+  outline: 2px solid var(--color-amber);
+  outline-offset: 3px;
+}
+
+.cloth svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .title-leaf h2 {
@@ -628,6 +821,39 @@
 }
 
 .ink-swatch.is-on { outline: 2px solid var(--color-amber); outline-offset: 2px; }
+
+.desk-heading {
+  margin: 0 0 0.15rem;
+  color: var(--color-amber);
+  font-size: 1.35rem;
+  font-weight: 500;
+}
+
+.ink-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.4rem;
+  padding: 0 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-line);
+  background: var(--color-raised);
+  color: var(--color-fg);
+  font: 500 0.82rem/1 var(--font-sans);
+}
+
+.ink-chip i {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.25);
+}
+
+.ink-chip.is-on {
+  background: var(--color-amber);
+  border-color: var(--color-amber);
+  color: var(--color-amber-ink);
+}
 
 .ask h3, .player h3 { margin: 0; }
 

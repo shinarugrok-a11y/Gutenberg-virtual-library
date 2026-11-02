@@ -35,7 +35,7 @@ export type ShelfErr = { ok: false; error: string };
 export type BookTextOk = { ok: true; id: number; text: string };
 export type BookTextErr = { ok: false; error: string };
 
-export const PAGE_SIZE = 24;
+export const PAGE_SIZE = 36;
 
 export const LANGUAGES: { id: string; label: string }[] = [
   { id: "", label: "All languages" },

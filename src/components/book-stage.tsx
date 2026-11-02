@@ -33,10 +33,19 @@ function LeafBody({
   comments: string[];
 }) {
   const extra = comments.length > 0;
+  const notes = extra ? (
+    <aside className="page-notes" aria-label="Notes on this page">
+      {comments.map((comment) => (
+        <p key={comment} className="margin-note">
+          {comment}
+        </p>
+      ))}
+    </aside>
+  ) : null;
   if (index <= 0) {
     return (
       <div className="page-scroll">
-        <div className="page-inner title-leaf">
+        <div className={`page-inner title-leaf${extra ? " has-notes" : ""}`}>
           <p className="page-kicker">Project Gutenberg #{card.id}</p>
           <h2>{card.title}</h2>
           <p className="page-prose">{card.author}</p>
@@ -52,11 +61,7 @@ function LeafBody({
             {status === "idle" && "Waiting on the shelf."}
           </p>
           <p className="page-kicker">Public-domain text via Project Gutenberg.</p>
-          {comments.map((comment) => (
-            <p key={comment} className="margin-note">
-              {comment}
-            </p>
-          ))}
+          {notes}
           {ink}
         </div>
       </div>
@@ -64,16 +69,12 @@ function LeafBody({
   }
   const opensChapter = leaf?.blocks.some((block) => block.type === "heading" && block.level === 1) ?? false;
   return (
-    <div className={`page-scroll${extra ? " has-extra" : ""}`}>
-      <div className="page-inner">
+    <div className="page-scroll">
+      <div className={`page-inner${extra ? " has-notes" : ""}`}>
         <p className="running-head">{opensChapter ? card.title : leaf?.chapter || card.title}</p>
         <Flow blocks={leaf?.blocks ?? []} cursor={cursor} lang={card.lang} />
         <p className="folio">{index}</p>
-        {comments.map((comment) => (
-          <p key={comment} className="margin-note">
-            {comment}
-          </p>
-        ))}
+        {notes}
         {ink}
       </div>
     </div>
@@ -114,7 +115,7 @@ export function BookStage({
   const setBrush = useDesk((s) => s.setBrush);
   const setStrokes = useDesk((s) => s.setStrokes);
   const addComment = useDesk((s) => s.addComment);
-  const [inkOpen, setInkOpen] = useState(false);
+  const [inkOpen, setInkOpen] = useState(true);
   const [draft, setDraft] = useState("");
   const [confirmClear, setConfirmClear] = useState(false);
   const [anim, setAnim] = useState<Anim | null>(null);
@@ -139,6 +140,10 @@ export function BookStage({
   useEffect(() => {
     animRef.current = anim;
   }, [anim]);
+
+  useEffect(() => {
+    if (window.matchMedia("(min-width: 1180px)").matches) setInkOpen(true);
+  }, []);
 
   useEffect(() => {
     onPages(plains);
@@ -415,30 +420,32 @@ export function BookStage({
         )}
         {inkOpen && (
           <div className="ink-tray panel">
-            <div className="row-scroll">
+            <h2 className="desk-heading">The writing desk</h2>
+            <div className="row-scroll" role="group" aria-label="Ink tools">
               {tools.map((item) => (
                 <button key={item.id} type="button" className={`desk-btn${tool === item.id ? " is-on" : ""}`} aria-pressed={tool === item.id} onClick={() => setTool(item.id)}>
                   {item.label}
                 </button>
               ))}
             </div>
-            <div className="row-scroll">
+            <div className="row-scroll" role="group" aria-label="Inks">
               {INKS.map((item) => (
                 <button
                   key={item.id}
                   type="button"
-                  className={`ink-swatch${inkId === item.id ? " is-on" : ""}`}
-                  style={{ background: item.color }}
-                  aria-label={item.label}
+                  className={`ink-chip${inkId === item.id ? " is-on" : ""}`}
                   aria-pressed={inkId === item.id}
                   onClick={() => setInkId(item.id)}
-                />
+                >
+                  <i style={{ background: item.color }} aria-hidden />
+                  {item.label}
+                </button>
               ))}
-              <label className="text-muted text-sm">
-                Weight
-                <input className="range" type="range" min={1.2} max={7} step={0.2} value={brush} onChange={(event) => setBrush(Number(event.target.value))} />
-              </label>
             </div>
+            <label className="text-muted text-sm">
+              Weight
+              <input className="range" type="range" min={1.2} max={7} step={0.2} value={brush} onChange={(event) => setBrush(Number(event.target.value))} />
+            </label>
             <div className="row-scroll">
               <button type="button" className="desk-btn" onClick={() => setStrokes(card.id, shown, strokes.slice(0, -1))} disabled={!strokes.length}>
                 Undo
@@ -466,14 +473,12 @@ export function BookStage({
                 setDraft("");
               }}
             >
-              <input className="desk-field" value={draft} placeholder="Margin note for this page" onChange={(event) => setDraft(event.target.value)} maxLength={2000} />
+              <input className="desk-field" value={draft} placeholder="A line in the margin, saved with this page" onChange={(event) => setDraft(event.target.value)} maxLength={2000} aria-label="Margin note" />
               <button type="submit" className="desk-btn is-on">
                 Save note
               </button>
             </form>
-            <p className="text-muted text-sm">
-              Pen, pencil, brush, and marker stay on the page. Ink locks the leaf so the stroke does not scroll it. The download keeps each mark beside the passage it sits on.
-            </p>
+            <p className="text-muted text-sm">Draw on the page. The stroke stays with that leaf. The note sits in the margin beside it.</p>
           </div>
         )}
       </div>

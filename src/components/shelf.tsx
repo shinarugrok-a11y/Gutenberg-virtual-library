@@ -1,5 +1,6 @@
 import { LoaderCircle, Search } from "lucide-react";
-import { LANGUAGES, frequency, type Card, type GenreStat, type Order } from "@/lib/shelf";
+import { LANGUAGES, type Card, type GenreStat, type Order } from "@/lib/shelf";
+import { SpineWall } from "@/components/cloth-spine";
 
 const ORDERS: { id: Order; label: string }[] = [
   { id: "popular", label: "Borrowed" },
@@ -34,6 +35,7 @@ export function Shelf({
   onOpen,
   onSpin,
   spinning,
+  wall,
 }: {
   qInput: string;
   onQ: (value: string) => void;
@@ -59,6 +61,7 @@ export function Shelf({
   onOpen: (book: Card) => void;
   onSpin: () => void;
   spinning: boolean;
+  wall: "sidebar" | "narrow";
 }) {
   const showGenres = order === "genre" && !genre;
   const letters = ["#", ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("")];
@@ -150,22 +153,12 @@ export function Shelf({
             {live ? "Most borrowed, live from Project Gutenberg" : `${total.toLocaleString()} books`}
             {genre ? ` · ${genres.find((item) => item.id === genre)?.label ?? "band"}` : ""}
           </p>
-          <div className="shelf-list">
-            {books.map((book) => (
-              <button key={book.id} type="button" className={`shelf-item${activeId === book.id ? " is-on" : ""}`} onClick={() => onOpen(book)}>
-                <span className="freq">{frequency(book.id)}</span>
-                <span>
-                  <strong>{book.title}</strong>
-                  <span className="meta">
-                    {book.author}
-                    {book.year ? ` · ${book.year}` : ""} · {book.lang || "—"}
-                  </span>
-                  <span className="meta">{book.shelf}</span>
-                </span>
-              </button>
-            ))}
-            {!books.length && <p className="text-muted text-sm">Nothing on this frequency.</p>}
-          </div>
+          {wall === "sidebar" || wall === "narrow" ? (
+            <div className={wall === "narrow" ? "only-narrow" : undefined}>
+              <SpineWall books={books} activeId={activeId} onOpen={onOpen} perShelf={wall === "narrow" ? 12 : 7} />
+            </div>
+          ) : null}
+          {!books.length && wall === "sidebar" && <p className="text-muted mt-3 text-sm">Nothing on this frequency.</p>}
           <div className="row-scroll mt-3">
             <button type="button" className="desk-btn" disabled={page <= 1} onClick={() => onPage(page - 1)}>
               Previous stack
