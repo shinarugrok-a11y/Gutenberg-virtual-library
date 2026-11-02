@@ -1,3 +1,4 @@
+import { compactNotes, uniqueStrokes } from "@/lib/ink-persistence";
 import { create } from "zustand";
 import { INKS, type BookNotes, type MarginNote, type QaTurn, type Stroke, type Tool } from "@/lib/notes";
 
@@ -62,32 +63,63 @@ function blank(): Persisted {
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
-function scheduleSave() {
-  if (typeof window === "undefined") return;
-  if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    const state = useDesk.getState();
-    const payload: Persisted = {
-      motion: state.motion,
-      skin: state.skin,
-      lcd: state.lcd,
-      showPlaylist: state.showPlaylist,
-      showEq: state.showEq,
-      volume: state.volume,
-      eq: state.eq,
-      tool: state.tool,
-      inkId: state.inkId,
-      brush: state.brush,
-      atmosphere: state.atmosphere,
-      notes: state.notes,
-    };
+let dirty = false;
+let lifecycleInstalled = false;
+
+function installSaveLifecycle() {
+  if (lifecycleInstalled || typeof window === "undefined") return;
+  lifecycleInstalled = true;
+  window.addEventListener("pagehide", flushDeskSave);
+  window.addEventListener("beforeunload", flushDeskSave);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushDeskSave();
+  });
+}
+
+/** Synchronous: safe to call from pointerup and page lifecycle events. */
+export function flushDeskSave() {
+  if (typeof window === "undefined" || !dirty) return;
+  if (saveTimer !== null) clearTimeout(saveTimer);
+  saveTimer = null;
+  const state = useDesk.getState();
+  const payload: Persisted = {
+    motion: state.motion,
+    skin: state.skin,
+    lcd: state.lcd,
+    showPlaylist: state.showPlaylist,
+    showEq: state.showEq,
+    volume: state.volume,
+    eq: state.eq,
+    tool: state.tool,
+    inkId: state.inkId,
+    brush: state.brush,
+    atmosphere: state.atmosphere,
+    notes: state.notes,
+  };
+  try {
     try {
       localStorage.setItem(KEY, JSON.stringify(payload));
-      if (useDesk.getState().storageWarning) useDesk.setState({ storageWarning: false });
-    } catch {
-      useDesk.setState({ storageWarning: true });
+    } catch (error) {
+      if (!(error instanceof Error) || !["QuotaExceededError", "NS_ERROR_DOM_QUOTA_REACHED"].includes(error.name)) throw error;
+      const notes = compactNotes(payload.notes);
+      localStorage.setItem(KEY, JSON.stringify({ ...payload, notes }));
+      // Keep future saves compact, but only after the retry actually succeeds.
+      useDesk.setState({ notes });
     }
-  }, 350);
+    dirty = false;
+    if (useDesk.getState().storageWarning) useDesk.setState({ storageWarning: false });
+  } catch {
+    // Retain the unsaved state for export and another lifecycle/save attempt.
+    useDesk.setState({ storageWarning: true });
+  }
+}
+
+function scheduleSave() {
+  if (typeof window === "undefined") return;
+  installSaveLifecycle();
+  dirty = true;
+  if (saveTimer !== null) clearTimeout(saveTimer);
+  saveTimer = setTimeout(flushDeskSave, 350);
 }
 
 export const useDesk = create<State>((set, get) => ({
@@ -155,7 +187,7 @@ export const useDesk = create<State>((set, get) => ({
     set({
       notes: {
         ...get().notes,
-        [key]: { ...current, strokes: { ...current.strokes, [String(leaf)]: strokes } },
+        [key]: { ...current, strokes: { ...current.strokes, [String(leaf)]: uniqueStrokes(strokes) } },
       },
     });
     scheduleSave();
@@ -199,6 +231,7 @@ export const useDesk = create<State>((set, get) => ({
   },
   hydrate: (motionDefault) => {
     if (typeof window === "undefined") return;
+    installSaveLifecycle();
     try {
       const raw = localStorage.getItem(KEY);
       if (!raw) {
