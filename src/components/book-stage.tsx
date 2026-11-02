@@ -3,9 +3,10 @@ import { ChevronLeft, ChevronRight, Download, PenLine } from "lucide-react";
 import type { Card } from "@/lib/shelf";
 import { INKS, downloadText, notesToMarkdown, type Tool } from "@/lib/notes";
 import { useDesk } from "@/lib/desk-store";
-import { blockHeight, packLeaves, type Block, type Leaf } from "@/lib/text";
+import { blockHeight, holdPlace, packLeaves, stableBox, type Block, type Leaf } from "@/lib/text";
 import { BlockView, Flow } from "@/components/typeset";
 import { InkLayer } from "@/components/ink-layer";
+import { rebindMarks } from "@/lib/notes";
 
 type Anim = { dir: 1 | -1; incoming: number; phase: "prep" | "run" };
 
@@ -133,6 +134,8 @@ export function BookStage({
   const shownRef = useRef(shown);
   shownRef.current = shown;
   const last = leaves.length;
+  const leavesRef = useRef(leaves);
+  leavesRef.current = leaves;
   const ink = INKS.find((item) => item.id === inkId) ?? INKS[0]!;
   const strokes = notes?.strokes[String(shown)] ?? [];
   const plains = useMemo(() => leaves.map((item) => item.plain), [leaves]);
@@ -148,10 +151,6 @@ export function BookStage({
   useEffect(() => {
     onPages(plains);
   }, [plains, onPages]);
-
-  useEffect(() => {
-    if (shown > 0) placeRef.current = leaves[shown - 1]?.plain.slice(0, 70) ?? "";
-  }, [shown]);
 
   useEffect(() => {
     if (pending != null && leaf === pending) setPending(null);
@@ -172,7 +171,7 @@ export function BookStage({
       const budget =
         scroll.clientHeight - Number.parseFloat(style.paddingTop) - Number.parseFloat(style.paddingBottom) - 36;
       const width = scroll.clientWidth - Number.parseFloat(style.paddingLeft) - Number.parseFloat(style.paddingRight);
-      setBox((prev) => (prev.width === Math.round(width) && prev.budget === Math.round(budget) ? prev : { width: Math.round(width), budget: Math.round(budget) }));
+      setBox((prev) => stableBox(prev, width, budget));
     };
     read();
     const observer = new ResizeObserver(read);
@@ -190,17 +189,25 @@ export function BookStage({
       return measured > 0 ? measured : blockHeight(block, box.width);
     });
     const next = packLeaves(blocks, (_block, index) => heights[index] ?? 0, box.budget);
-    const place = placeRef.current;
-    const page = shownRef.current;
-    if (place && page > 0) {
-      const here = next[page - 1]?.plain ?? "";
-      if (!here.includes(place.slice(0, 40))) {
-        const found = next.findIndex((item) => item.plain.includes(place.slice(0, 40)));
-        if (found >= 0) onLeaf(found + 1);
+    const old = leavesRef.current;
+    const oldPlains = old.map((item) => item.plain);
+    const nextPlains = next.map((item) => item.plain);
+    const same = oldPlains.length === nextPlains.length && oldPlains.every((plain, index) => plain === nextPlains[index]);
+    if (!same) {
+      const book = useDesk.getState().notes[String(card.id)];
+      if (book && (book.comments.length > 0 || Object.values(book.strokes).some((list) => list.length > 0))) {
+        const rebound = rebindMarks(oldPlains, nextPlains, book.strokes, book.comments);
+        if (rebound.moved) useDesk.getState().rebindBook(card.id, rebound.strokes, rebound.comments);
       }
+      setLeaves(next);
     }
-    setLeaves(next);
-  }, [blocks, box, onLeaf]);
+    const page = shownRef.current;
+    if (!placeRef.current && page > 0) {
+      placeRef.current = (old[page - 1]?.plain || next[page - 1]?.plain || "").slice(0, 80);
+    }
+    const held = holdPlace(nextPlains, page, placeRef.current);
+    if (held !== page) onLeaf(held);
+  }, [blocks, box, onLeaf, card.id]);
 
   useLayoutEffect(() => {
     if (anim?.phase !== "prep") return;
@@ -211,16 +218,26 @@ export function BookStage({
   }, [anim]);
 
   const commit = useCallback((next: number) => {
+    pinPlace(next);
     setAnim(null);
     setPending(next);
     onLeaf(next);
   }, [onLeaf]);
+
+  function pinPlace(index: number) {
+    if (index <= 0) {
+      placeRef.current = "";
+      return;
+    }
+    placeRef.current = leavesRef.current[index - 1]?.plain.slice(0, 80) ?? "";
+  }
 
   function turn(dir: 1 | -1) {
     if (anim) return;
     const next = shown + dir;
     if (next < 0 || next > last) return;
     if (!motion) {
+      pinPlace(next);
       setPending(next);
       onLeaf(next);
       return;
@@ -238,19 +255,23 @@ export function BookStage({
     return () => window.clearTimeout(timer);
   }, [anim, commit]);
 
+  const pageText = shown <= 0 ? `${card.title}. By ${card.author}.` : (leaves[shown - 1]?.plain ?? "");
+  const turnRef = useRef<(dir: 1 | -1) => void>(() => undefined);
+  turnRef.current = turn;
+
   useEffect(() => {
     if (!onAir || typeof window === "undefined" || !window.speechSynthesis) {
       window.speechSynthesis?.cancel();
       setCursor(null);
       return;
     }
+    const text = pageText;
+    if (!text.trim()) return;
     let stopped = false;
     const timer = window.setTimeout(() => {
       if (stopped) return;
       const synth = window.speechSynthesis;
       synth.cancel();
-      const text = shown <= 0 ? `${card.title}. By ${card.author}.` : (leaves[shown - 1]?.plain ?? "");
-      if (!text.trim()) return;
       const utter = new SpeechSynthesisUtterance(text.slice(0, 8000));
       utter.rate = rate;
       const lang =
@@ -262,7 +283,7 @@ export function BookStage({
       utter.onend = () => {
         if (stopped) return;
         setCursor(null);
-        if (shown < last) turn(1);
+        if (shown < leavesRef.current.length) turnRef.current(1);
         else onStopAir();
       };
       synth.speak(utter);
@@ -272,7 +293,8 @@ export function BookStage({
       window.clearTimeout(timer);
       window.speechSynthesis.cancel();
     };
-  }, [onAir, shown, card.id, card.title, card.author, card.lang, rate, leaves, last, motion, onStopAir]);
+    // The spoken page, not the leaf array. A resize must not cancel a sentence that is still on screen.
+  }, [onAir, pageText, rate, card.lang, shown, onStopAir]);
 
   function finish(event: TransitionEvent<HTMLDivElement>) {
     if (event.target !== event.currentTarget || event.propertyName !== "transform") return;
@@ -282,6 +304,7 @@ export function BookStage({
   }
 
   function jump(next: number) {
+    pinPlace(next);
     setAnim(null);
     setPending(next);
     onLeaf(next);

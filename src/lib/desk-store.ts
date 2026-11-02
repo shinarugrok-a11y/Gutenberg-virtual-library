@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { INKS, type BookNotes, type QaTurn, type Stroke, type Tool } from "@/lib/notes";
+import { INKS, type BookNotes, type MarginNote, type QaTurn, type Stroke, type Tool } from "@/lib/notes";
 
 export type SkinId = "amber" | "classic" | "paper" | "nocturne" | "phosphor";
 export type LcdId = "amber" | "green" | "ice" | "paper";
@@ -37,6 +37,7 @@ type State = Persisted & {
   setAtmosphere: (atmosphere: Atmosphere) => void;
   ensureBook: (id: number, title: string, author: string) => void;
   setStrokes: (id: number, leaf: number, strokes: Stroke[]) => void;
+  rebindBook: (id: number, strokes: Record<string, Stroke[]>, comments: MarginNote[]) => void;
   addComment: (id: number, leaf: number, text: string) => void;
   addQa: (id: number, turn: QaTurn) => void;
   hydrate: (motionDefault: boolean) => void;
@@ -155,6 +156,18 @@ export const useDesk = create<State>((set, get) => ({
       notes: {
         ...get().notes,
         [key]: { ...current, strokes: { ...current.strokes, [String(leaf)]: strokes } },
+      },
+    });
+    scheduleSave();
+  },
+  rebindBook: (id, strokes, comments) => {
+    const key = String(id);
+    const current = get().notes[key];
+    if (!current) return;
+    set({
+      notes: {
+        ...get().notes,
+        [key]: { ...current, strokes, comments },
       },
     });
     scheduleSave();

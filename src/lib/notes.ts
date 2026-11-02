@@ -50,6 +50,43 @@ export function emptyNotes(card: Pick<Card, "id" | "title" | "author">): BookNot
   return { id: card.id, title: card.title, author: card.author, strokes: {}, comments: [], qa: [] };
 }
 
+function settleLeaf(oldPlains: string[], nextPlains: string[], leaf: number): number {
+  if (leaf <= 0) return leaf;
+  const snip = oldPlains[leaf - 1]?.slice(0, 40) ?? "";
+  if (!snip) return leaf;
+  const found = nextPlains.findIndex((plain) => plain.includes(snip));
+  return found >= 0 ? found + 1 : leaf;
+}
+
+/** Move ink and margin notes onto the leaf that still holds the same words. */
+export function rebindMarks(
+  oldPlains: string[],
+  nextPlains: string[],
+  strokes: Record<string, Stroke[]>,
+  comments: MarginNote[],
+): { strokes: Record<string, Stroke[]>; comments: MarginNote[]; moved: boolean } {
+  if (oldPlains.length === nextPlains.length && oldPlains.every((plain, index) => plain === nextPlains[index])) {
+    return { strokes, comments, moved: false };
+  }
+  let moved = false;
+  const nextStrokes: Record<string, Stroke[]> = {};
+  for (const [key, list] of Object.entries(strokes)) {
+    if (!list?.length) continue;
+    const from = Number(key);
+    const settled = settleLeaf(oldPlains, nextPlains, from);
+    if (settled !== from) moved = true;
+    const slot = String(settled);
+    nextStrokes[slot] = [...(nextStrokes[slot] ?? []), ...list];
+  }
+  const nextComments = comments.map((comment) => {
+    const settled = settleLeaf(oldPlains, nextPlains, comment.leaf);
+    if (settled !== comment.leaf) moved = true;
+    return settled === comment.leaf ? comment : { ...comment, leaf: settled };
+  });
+  if (!moved) return { strokes, comments, moved: false };
+  return { strokes: nextStrokes, comments: nextComments, moved: true };
+}
+
 export function eraseNear(strokes: Stroke[], x: number, y: number, radius: number): Stroke[] {
   const out: Stroke[] = [];
   for (const stroke of strokes) {

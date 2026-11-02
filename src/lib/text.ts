@@ -536,6 +536,31 @@ export function packLeaves(blocks: Block[], heightOf: (block: Block, index: numb
   return leaves;
 }
 
+/** Ignore toolbar and scrollbar jitter. A real resize still updates. */
+export function stableBox(
+  prev: { width: number; budget: number },
+  width: number,
+  budget: number,
+): { width: number; budget: number } {
+  const nextWidth = Math.round(width);
+  const nextBudget = Math.round(budget);
+  if (!Number.isFinite(nextWidth) || !Number.isFinite(nextBudget) || nextWidth < 80 || nextBudget < 80) return prev;
+  if (prev.width >= 80 && Math.abs(nextWidth - prev.width) < 16 && Math.abs(nextBudget - prev.budget) < 64) return prev;
+  return { width: nextWidth, budget: nextBudget };
+}
+
+/** Keep the reader on the leaf that still contains the anchor. Does not move the anchor. */
+export function holdPlace(plains: string[], page: number, anchor: string): number {
+  if (page <= 0 || !anchor) return page;
+  const snip = anchor.slice(0, 40);
+  if (!snip) return page;
+  const here = plains[page - 1] ?? "";
+  if (here.includes(snip)) return page;
+  const found = plains.findIndex((plain) => plain.includes(snip));
+  if (found >= 0) return found + 1;
+  return Math.min(Math.max(page, 0), plains.length);
+}
+
 export function wordCount(text: string): number {
   const words = text.match(/[A-Za-z0-9'’]+/g);
   return words?.length ?? 0;
