@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { flushDeskSave } from "@/lib/desk-store";
 import { eraseNear, type Stroke, type Tool } from "@/lib/notes";
 
 type Live = Stroke | null;
@@ -64,6 +65,8 @@ export function InkLayer({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [live, setLive] = useState<Live>(null);
+  const liveRef = useRef<Live>(null);
+  const pointerRef = useRef<number | null>(null);
   const strokesRef = useRef(strokes);
   strokesRef.current = strokes;
 
@@ -97,20 +100,22 @@ export function InkLayer({
   }
 
   function down(event: PointerEvent<HTMLCanvasElement>) {
-    if (!active) return;
+    if (!active || pointerRef.current !== null) return;
+    pointerRef.current = event.pointerId;
     event.currentTarget.setPointerCapture(event.pointerId);
     const point = pointOf(event);
     if (tool === "eraser") {
       onChange(eraseNear(strokesRef.current, point.x, point.y, size / 180));
       return;
     }
-    setLive({
+    liveRef.current = {
       id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
       tool,
       color,
       size,
       points: [point],
-    });
+    };
+    setLive(liveRef.current);
   }
 
   function move(event: PointerEvent<HTMLCanvasElement>) {
@@ -120,26 +125,30 @@ export function InkLayer({
       onChange(eraseNear(strokesRef.current, point.x, point.y, size / 180));
       return;
     }
-    setLive((current) => {
-      if (!current) return current;
-      const last = current.points[current.points.length - 1];
-      if (!last) return current;
-      const dx = last.x - point.x;
-      const dy = last.y - point.y;
-      if (dx * dx + dy * dy < 0.000004) return current;
-      const jitter = tool === "pencil" ? (Math.random() - 0.5) * 0.004 : 0;
-      const next = { x: point.x + jitter, y: point.y + jitter };
-      if (current.points.length > 1600) return current;
-      return { ...current, points: [...current.points, next] };
-    });
+    const current = liveRef.current;
+    if (!current) return;
+    const last = current.points[current.points.length - 1];
+    if (!last) return;
+    const dx = last.x - point.x;
+    const dy = last.y - point.y;
+    if (dx * dx + dy * dy < 0.000004 || current.points.length > 1600) return;
+    const jitter = current.tool === "pencil" ? (Math.random() - 0.5) * 0.004 : 0;
+    liveRef.current = { ...current, points: [...current.points, { x: point.x + jitter, y: point.y + jitter }] };
+    setLive(liveRef.current);
   }
 
-  function up() {
-    if (tool === "eraser") return;
-    setLive((current) => {
-      if (current && current.points.length > 1) onChange([...strokesRef.current, current]);
-      return null;
-    });
+  function up(event: PointerEvent<HTMLCanvasElement>) {
+    if (pointerRef.current !== event.pointerId) return;
+    pointerRef.current = null;
+    const current = liveRef.current;
+    liveRef.current = null;
+    setLive(null);
+    if (current && current.points.length > 1 && !strokesRef.current.some((stroke) => stroke.id === current.id)) {
+      const next = [...strokesRef.current, current];
+      strokesRef.current = next;
+      onChange(next);
+    }
+    flushDeskSave();
   }
 
   return (
