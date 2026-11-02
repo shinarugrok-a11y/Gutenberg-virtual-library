@@ -2,11 +2,17 @@ import { compactNotes, uniqueStrokes } from "@/lib/ink-persistence";
 import { create } from "zustand";
 import { INKS, type BookNotes, type MarginNote, type QaTurn, type Stroke, type Tool } from "@/lib/notes";
 
+import type { Card } from "@/lib/shelf";
+
+export type ReadingPosition = { anchor: number | null; leaf: number; updatedAt: number };
+
 export type SkinId = "amber" | "classic" | "paper" | "nocturne" | "phosphor";
 export type LcdId = "amber" | "green" | "ice" | "paper";
 export type Atmosphere = "chalkboard" | "forest" | "vintage";
 
 type Persisted = {
+  lastBook: Card | null;
+  positions: Record<string, ReadingPosition>;
   motion: boolean | null;
   skin: SkinId;
   lcd: LcdId;
@@ -25,6 +31,8 @@ const KEY = "nightdesk.v1";
 
 type State = Persisted & {
   storageWarning: boolean;
+  rememberBook: (book: Card) => void;
+  savePosition: (id: number, anchor: number | null, leaf: number) => void;
   setMotion: (motion: boolean) => void;
   setSkin: (skin: SkinId) => void;
   setLcd: (lcd: LcdId) => void;
@@ -46,6 +54,8 @@ type State = Persisted & {
 
 function blank(): Persisted {
   return {
+    lastBook: null,
+    positions: {},
     motion: null,
     skin: "amber",
     lcd: "amber",
@@ -83,6 +93,8 @@ export function flushDeskSave() {
   saveTimer = null;
   const state = useDesk.getState();
   const payload: Persisted = {
+    lastBook: state.lastBook,
+    positions: state.positions,
     motion: state.motion,
     skin: state.skin,
     lcd: state.lcd,
@@ -114,6 +126,9 @@ export function flushDeskSave() {
   }
 }
 
+// Preserve the resume flow’s synchronous flush API.
+export const flushDesk = flushDeskSave;
+
 function scheduleSave() {
   if (typeof window === "undefined") return;
   installSaveLifecycle();
@@ -125,6 +140,14 @@ function scheduleSave() {
 export const useDesk = create<State>((set, get) => ({
   ...blank(),
   storageWarning: false,
+  rememberBook: (lastBook) => {
+    set({ lastBook });
+    scheduleSave();
+  },
+  savePosition: (id, anchor, leaf) => {
+    set({ positions: { ...get().positions, [String(id)]: { anchor, leaf, updatedAt: Date.now() } } });
+    scheduleSave();
+  },
   setMotion: (motion) => {
     set({ motion });
     scheduleSave();
@@ -243,7 +266,22 @@ export const useDesk = create<State>((set, get) => ({
       const lcds: LcdId[] = ["amber", "green", "ice", "paper"];
       const tools: Tool[] = ["pen", "pencil", "brush", "marker", "eraser"];
       const rooms: Atmosphere[] = ["chalkboard", "forest", "vintage"];
+      const positions: Record<string, ReadingPosition> = {};
+      for (const [id, position] of Object.entries(data.positions ?? {})) {
+        if (!position || !Number.isInteger(position.leaf) || position.leaf < 0) continue;
+        positions[id] = {
+          anchor: Number.isInteger(position.anchor) && position.anchor! >= 0 ? position.anchor : null,
+          leaf: position.leaf,
+          updatedAt: Number.isFinite(position.updatedAt) ? position.updatedAt : 0,
+        };
+      }
+      const book = data.lastBook;
+      const lastBook = book && Number.isInteger(book.id) && book.id > 0 && typeof book.title === "string" && typeof book.author === "string"
+        ? { id: book.id, title: book.title, author: book.author, lang: typeof book.lang === "string" ? book.lang : "en", year: Number(book.year) || 0, shelf: typeof book.shelf === "string" ? book.shelf : "" }
+        : null;
       set({
+        lastBook,
+        positions,
         motion: typeof data.motion === "boolean" ? data.motion : motionDefault,
         skin: skins.includes(data.skin as SkinId) ? (data.skin as SkinId) : "amber",
         lcd: lcds.includes(data.lcd as LcdId) ? (data.lcd as LcdId) : "amber",

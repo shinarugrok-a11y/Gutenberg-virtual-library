@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight, Download, PenLine } from "lucide-react";
 import type { Card } from "@/lib/shelf";
 import { INKS, downloadText, notesToMarkdown, type Tool } from "@/lib/notes";
 import { useDesk } from "@/lib/desk-store";
-import { blockHeight, holdPlace, packLeaves, stableBox, type Block, type Leaf } from "@/lib/text";
+import { blockHeight, packLeaves, stableBox, type Block, type Leaf } from "@/lib/text";
 import { BlockView, Flow } from "@/components/typeset";
 import { InkLayer } from "@/components/ink-layer";
 import { rebindMarks } from "@/lib/notes";
@@ -143,6 +143,9 @@ export function BookStage({
   const [leaves, setLeaves] = useState<Leaf[]>(estimated);
   const cardRef = useRef<HTMLDivElement>(null);
   const measureRef = useRef<HTMLDivElement>(null);
+  const positionRef = useRef(useDesk.getState().positions[String(card.id)] ?? { anchor: null, leaf: 0, updatedAt: 0 });
+  const paginatedRef = useRef(false);
+  const resolvedLeafRef = useRef<number | null>(null);
   useEffect(() => {
     const root = cardRef.current;
     if (!root) return;
@@ -157,7 +160,6 @@ export function BookStage({
     root.addEventListener("wheel", wheel, { passive: false });
     return () => root.removeEventListener("wheel", wheel);
   }, []);
-  const placeRef = useRef("");
   const animRef = useRef<Anim | null>(null);
   const shown = pending ?? leaf;
   const shownRef = useRef(shown);
@@ -186,10 +188,6 @@ export function BookStage({
     if (pending != null && leaf === pending) setPending(null);
   }, [leaf, pending]);
 
-  useEffect(() => {
-    if (shown > last) onLeaf(last);
-  }, [shown, last, onLeaf]);
-
   useLayoutEffect(() => {
     const root = cardRef.current;
     if (!root) return;
@@ -212,7 +210,7 @@ export function BookStage({
 
   useLayoutEffect(() => {
     const root = measureRef.current;
-    if (!root || box.width < 80 || box.budget < 80) return;
+    if (status !== "ready" || !blocks.length || !root || box.width < 80 || box.budget < 80) return;
     const nodes = root.querySelectorAll<HTMLElement>("[data-idx]");
     const heights = blocks.map((block, index) => {
       const measured = nodes[index]?.offsetHeight ?? 0;
@@ -231,13 +229,27 @@ export function BookStage({
       }
       setLeaves(next);
     }
-    const page = shownRef.current;
-    if (!placeRef.current && page > 0) {
-      placeRef.current = (old[page - 1]?.plain || next[page - 1]?.plain || "").slice(0, 80);
+    const position = positionRef.current;
+    const found = position.anchor == null ? -1 : next.findIndex((item) => item.blocks.includes(blocks[position.anchor!]!));
+    const held = found >= 0 ? found + 1 : Math.min(position.leaf, next.length);
+    positionRef.current.leaf = held;
+    resolvedLeafRef.current = held;
+    paginatedRef.current = status === "ready" && next.length > 0;
+    if (held !== shownRef.current) onLeaf(held);
+  }, [blocks, box, onLeaf, card.id, status]);
+
+  useLayoutEffect(() => {
+    if (!paginatedRef.current || status !== "ready") return;
+    if (resolvedLeafRef.current != null && shown !== resolvedLeafRef.current) return;
+    resolvedLeafRef.current = null;
+    // Keep the original block anchor through repagination; only a turn changes it.
+    if (positionRef.current.leaf !== shown || positionRef.current.anchor == null) {
+      const first = leaves[shown - 1]?.blocks[0];
+      positionRef.current = { anchor: first ? blocks.indexOf(first) : null, leaf: shown, updatedAt: Date.now() };
     }
-    const held = holdPlace(nextPlains, page, placeRef.current);
-    if (held !== page) onLeaf(held);
-  }, [blocks, box, onLeaf, card.id]);
+    positionRef.current.leaf = shown;
+    useDesk.getState().savePosition(card.id, positionRef.current.anchor, shown);
+  }, [shown, leaves, blocks, card.id, status]);
 
   useLayoutEffect(() => {
     if (anim?.phase !== "prep") return;
@@ -252,14 +264,11 @@ export function BookStage({
     setAnim(null);
     setPending(next);
     onLeaf(next);
-  }, [onLeaf]);
+  }, [onLeaf, blocks]);
 
   function pinPlace(index: number) {
-    if (index <= 0) {
-      placeRef.current = "";
-      return;
-    }
-    placeRef.current = leavesRef.current[index - 1]?.plain.slice(0, 80) ?? "";
+    const first = leavesRef.current[index - 1]?.blocks[0];
+    positionRef.current = { anchor: first ? blocks.indexOf(first) : null, leaf: index, updatedAt: Date.now() };
   }
 
   function turn(dir: 1 | -1) {

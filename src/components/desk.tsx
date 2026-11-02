@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { BookOpen, Headphones, Library, Radio, ScrollText } from "lucide-react";
 import { fetchBookText, searchShelf, spinDial } from "@/lib/catalog.functions";
-import { useDesk } from "@/lib/desk-store";
+import { flushDesk, useDesk } from "@/lib/desk-store";
 import { frequency, type Card, type Order } from "@/lib/shelf";
 import { composeBook } from "@/lib/text";
 import { Shelf } from "@/components/shelf";
@@ -40,13 +40,18 @@ export function Desk() {
   const setMotion = useDesk((s) => s.setMotion);
   const atmosphere = useDesk((s) => s.atmosphere);
   const setAtmosphere = useDesk((s) => s.setAtmosphere);
+  const lastBook = useDesk((s) => s.lastBook);
   const storageWarning = useDesk((s) => s.storageWarning);
   const stopAir = useCallback(() => setOnAir(false), []);
 
   useEffect(() => {
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     useDesk.getState().hydrate(!reduce);
+    const saved = useDesk.getState().lastBook;
+    if (saved) open(saved);
     setBooted(true);
+    window.addEventListener("pagehide", flushDesk);
+    return () => window.removeEventListener("pagehide", flushDesk);
   }, []);
 
   useEffect(() => {
@@ -77,7 +82,8 @@ export function Desk() {
 
   function open(book: Card) {
     setCard(book);
-    setLeaf(0);
+    setLeaf(useDesk.getState().positions[String(book.id)]?.leaf ?? 0);
+    useDesk.getState().rememberBook(book);
     setTextPages([]);
     setOnAir(false);
     setPane("read");
@@ -202,6 +208,7 @@ export function Desk() {
             spinning={spinning}
             wall={card ? "sidebar" : "narrow"}
           />
+          {lastBook && (!card || lastBook.id !== card.id) && <button type="button" className="desk-btn" onClick={() => open(lastBook)}>Continue reading {lastBook.title}</button>}
           {spinError && <p className="warn mt-2">{spinError}</p>}
         </div>
         <div className={`${pane === "read" ? "block" : "hidden"} show-wide`}>
