@@ -112,6 +112,39 @@ for (const s of SIZES) {
   check("ink-fast-reload: stroke saved when the page closes right after drawing", fast >= 2, `strokes=${fast}`);
   await ctx.close();
 }
+// Resume checks run last, leaving the existing screenshot contexts unchanged.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1366, height: 800 }, reducedMotion: "reduce" });
+  const page = await ctx.newPage();
+  await page.goto(base, { waitUntil: "networkidle" });
+  check("first visit stays on shelf", await page.locator('input[aria-label="Page"]').count() === 0);
+  await openBook(page);
+  const leaf = page.locator('input[aria-label="Page"]');
+  await leaf.fill("5");
+  await page.waitForTimeout(800);
+  const passage = await page.locator(".book-card .page-inner .flow-block").first().textContent();
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("nightdesk.v1")).positions[1342]);
+  await page.reload({ waitUntil: "networkidle" });
+  await leaf.waitFor({ timeout: 60000 });
+  await page.waitForTimeout(3000);
+  check("resume: reopen at leaf 5", await leaf.inputValue() === "5");
+  check("resume: same text after reload", !!passage?.trim() && await page.locator(".book-card .page-inner").first().textContent().then(text => text.includes(passage)));
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.waitForTimeout(1000);
+  await page.reload({ waitUntil: "networkidle" });
+  await leaf.waitFor({ timeout: 60000 });
+  await page.waitForTimeout(3000);
+  const resized = await page.evaluate(() => JSON.parse(localStorage.getItem("nightdesk.v1")).positions[1342]);
+  check("resume: resize preserves text anchor", saved.anchor === resized.anchor);
+  check("resume: resized leaf contains passage", await page.locator(".book-card .page-inner").first().textContent().then(text => text.includes(passage)));
+  check("resume: continue reading hidden for open book", await page.getByRole("button", { name: /Continue reading Pride and Prejudice/ }).count() === 0);
+  await leaf.fill("6");
+  await page.reload({ waitUntil: "networkidle" });
+  await leaf.waitFor({ timeout: 60000 });
+  await page.waitForTimeout(3000);
+  check("resume: immediate reload flushes leaf turn", await leaf.inputValue() === "6");
+  await ctx.close();
+}
 await browser.close();
 writeFileSync(`${out}/results.json`, JSON.stringify(results, null, 2));
 // Known failures (documented bugs not yet fixed). A fix PR removes its entry.
