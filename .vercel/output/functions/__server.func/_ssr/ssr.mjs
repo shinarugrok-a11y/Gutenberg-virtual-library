@@ -104,7 +104,7 @@ var HEADERS = { TSS_SHELL: "X-TSS_SHELL" };
 * the dev styles URL for route-scoped CSS collection.
 */
 async function getStartManifest(matchedRoutes) {
-	const { tsrStartManifest } = await import("../_tanstack-start-manifest_v-mK8s9qKL.mjs");
+	const { tsrStartManifest } = await import("../_tanstack-start-manifest_v-DYNOJLUW.mjs");
 	const startManifest = tsrStartManifest();
 	let routes = startManifest.routes;
 	routes[rootRouteId];
@@ -126,15 +126,15 @@ async function getStartManifest(matchedRoutes) {
 var manifest = {
 	"1929ea4be7d0bb0b3b5604e4a1ab569c042aa9c178090c8eb1fd26512ce448e4": {
 		functionName: "searchShelf_createServerFn_handler",
-		importer: () => import("./catalog.functions-UisF33nt.mjs")
+		importer: () => import("./catalog.functions-Dsm9YaUP.mjs")
 	},
 	"8deb5494821677ac6a086d95bc23e8bf3d4c7b1665478576933d222e4450e3d7": {
 		functionName: "spinDial_createServerFn_handler",
-		importer: () => import("./catalog.functions-UisF33nt.mjs")
+		importer: () => import("./catalog.functions-Dsm9YaUP.mjs")
 	},
 	"a6174307a4b52f20738c1cd96513c2520c1507c2e9a8b00bb8a69bc9759797c6": {
 		functionName: "fetchBookText_createServerFn_handler",
-		importer: () => import("./catalog.functions-UisF33nt.mjs")
+		importer: () => import("./catalog.functions-Dsm9YaUP.mjs")
 	}
 };
 async function getServerFnById(id, access) {
@@ -1539,7 +1539,7 @@ var getBaseManifest = getProdBaseManifest;
 var createEarlyHintsForRequest = createEarlyHintsCollector;
 async function loadEntries() {
 	const [routerEntry, startEntry, pluginAdapters] = await Promise.all([
-		import("./router-CcfdlJ4p.mjs").then((n) => n.t),
+		import("./router-Yyn9ETxB.mjs").then((n) => n.t),
 		import("./start-5Z2QO8AU.mjs"),
 		import("./empty-plugin-adapters-D9UWiqvJ.mjs")
 	]);
