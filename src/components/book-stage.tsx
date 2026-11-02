@@ -8,6 +8,9 @@ import { BlockView, Flow } from "@/components/typeset";
 import { InkLayer } from "@/components/ink-layer";
 import { rebindMarks } from "@/lib/notes";
 
+import { LANGUAGES, CREDITS } from "@/lib/translate/models";
+import { useTranslation } from "@/lib/translate/use-translation";
+
 type Anim = { dir: 1 | -1; incoming: number; phase: "prep" | "run" };
 
 function LeafBody({
@@ -21,6 +24,9 @@ function LeafBody({
   error,
   ink,
   comments,
+  translated,
+  target,
+  pageHeight,
 }: {
   card: Card;
   index: number;
@@ -32,6 +38,9 @@ function LeafBody({
   error: string | null;
   ink: ReactNode;
   comments: string[];
+  translated?: string;
+  target?: string;
+  pageHeight?: number;
 }) {
   const extra = comments.length > 0;
   const notes = extra ? (
@@ -69,14 +78,20 @@ function LeafBody({
     );
   }
   const opensChapter = leaf?.blocks.some((block) => block.type === "heading" && block.level === 1) ?? false;
+  // Both margin notes and translated prose can overflow the fixed page budget.
   return (
-    <div className={`page-scroll${extra ? " has-extra" : ""}`}>
+    <div className={`page-scroll${extra || translated !== undefined ? " has-extra" : ""}`}>
       <div className={`page-inner${extra ? " has-notes" : ""}`}>
         <p className="running-head">{opensChapter ? card.title : leaf?.chapter || card.title}</p>
-        <Flow blocks={leaf?.blocks ?? []} cursor={cursor} lang={card.lang} />
+        {translated !== undefined ? (
+          <div className="page-prose" lang={target} dir={target === "ar" ? "rtl" : "auto"} data-translation>
+            {translated.split(/\n\s*\n/).map((paragraph, i) => <p key={i}>{paragraph}</p>)}
+            <small className="text-muted text-sm">{CREDITS}</small>
+          </div>
+        ) : <Flow blocks={leaf?.blocks ?? []} cursor={cursor} lang={card.lang} />}
         <p className="folio">{index}</p>
         {notes}
-        {ink}
+        {translated !== undefined ? <div style={{ position: "absolute", inset: 0, height: pageHeight }}>{ink}</div> : ink}
       </div>
     </div>
   );
@@ -152,6 +167,7 @@ export function BookStage({
   leavesRef.current = leaves;
   const ink = INKS.find((item) => item.id === inkId) ?? INKS[0]!;
   const strokes = notes?.strokes[String(shown)] ?? [];
+  const translation = useTranslation(card.id, (card.lang || "en").toLowerCase().split("-")[0]!, leaves, shown);
   const plains = useMemo(() => leaves.map((item) => item.plain), [leaves]);
 
   useEffect(() => {
@@ -351,6 +367,9 @@ export function BookStage({
         pageCount={leaves.length}
         status={status}
         error={error}
+        translated={index === shown ? translation.translated : undefined}
+        target={translation.target}
+        pageHeight={cardRef.current?.clientHeight}
         comments={pageComments}
         ink={inkFor(index, interactive)}
       />
@@ -440,7 +459,13 @@ export function BookStage({
           <button type="button" className="desk-btn" onClick={() => exportNotes("json")}>
             JSON
           </button>
+          <select className="desk-btn" aria-label="Translate" value={translation.target} onChange={(event) => translation.select(event.target.value)}>
+            <option value="">Translate</option>
+            {LANGUAGES.map((language) => <option key={language.code} value={language.code}>{language.name}</option>)}
+          </select>
+          {translation.target && <button type="button" className={`desk-btn${translation.original ? " is-on" : ""}`} aria-pressed={translation.original} onClick={translation.toggle}>Original</button>}
         </div>
+        {translation.message && <p className="text-muted text-sm" role="status">{translation.message}</p>}
         <input
           className="range"
           type="range"

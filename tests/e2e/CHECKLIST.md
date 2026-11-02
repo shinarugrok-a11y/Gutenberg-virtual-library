@@ -5,6 +5,6 @@ Automated in `tests/e2e/run.mjs`; manual items marked (m).
 - Read aloud + rate (m); Ask panel (m); Animation toggle; Atmosphere; Skin/LCD (m); music player (m)
 - Ink: pen/pencil/brush/marker/eraser/undo (m); ink survives reload + reopen (auto)
 - Margin notes (m); Notes export; JSON export
-- Translation (WP-11): pick language, pack downloads on demand, toggle back to original
+- Translation: pick language, download, toggle back to original
 - No console errors at 390, 768, 1366, 1920
 - Visual diff vs `v0-live-baseline-2026-11-02` <= 2% pixels per screenshot unless the PR is explicitly visual
