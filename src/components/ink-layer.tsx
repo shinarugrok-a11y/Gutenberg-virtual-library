@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { flushDeskSave } from "@/lib/desk-store";
 import { eraseNear, type Stroke, type Tool } from "@/lib/notes";
 
 type Live = (Omit<Stroke, "tool"> & { tool: Tool }) | null;
@@ -192,7 +193,9 @@ export function InkLayer({
     if (event.nativeEvent.isTrusted) event.currentTarget.setPointerCapture(event.pointerId);
     if (tool === "eraser" && event.pointerType !== "touch") {
       const point = pointOf(event);
-      onChange(eraseNear(strokesRef.current, point.x, point.y, size / 180));
+      const next = eraseNear(strokesRef.current, point.x, point.y, size / 180);
+      strokesRef.current = next;
+      onChange(next);
     }
     setLive({
       id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
@@ -213,12 +216,14 @@ export function InkLayer({
     if (!current) return;
     const point = pointOf(event);
     if (current.tool === "eraser" && event.pointerType !== "touch") {
-      onChange(eraseNear(strokesRef.current, point.x, point.y, size / 180));
+      const next = eraseNear(strokesRef.current, point.x, point.y, size / 180);
+      strokesRef.current = next;
+      onChange(next);
       return;
     }
     const last = current.points[current.points.length - 1]!;
     if ((last.x - point.x) ** 2 + (last.y - point.y) ** 2 < 0.000004 || current.points.length > 1600) return;
-    const jitter = tool === "pencil" ? (Math.random() - 0.5) * 0.004 : 0;
+    const jitter = current.tool === "pencil" ? (Math.random() - 0.5) * 0.004 : 0;
     setLive({ ...current, points: [...current.points, { x: point.x + jitter, y: point.y + jitter }] });
   }
 
@@ -228,15 +233,22 @@ export function InkLayer({
     if (edge.current?.id === event.pointerId && !multiTouch.current) finishSwipe(event.clientX, event.clientY);
     if (drawing.current === event.pointerId) {
       const current = liveRef.current;
+      // Clear synchronously before publishing; React rendering must not own commits.
+      drawing.current = null;
+      setLive(null);
       if (current && (current.points.length > 1 || current.tool === "eraser")) {
         if (current.tool === "eraser") {
           let next = strokesRef.current;
-          for (const point of current.points) next = eraseNear(next, point.x, point.y, size / 180);
+          for (const point of current.points) next = eraseNear(next, point.x, point.y, current.size / 180);
+          strokesRef.current = next;
           onChange(next);
-        } else onChange([...strokesRef.current, current as Stroke]);
+        } else if (!strokesRef.current.some((stroke) => stroke.id === current.id)) {
+          const next = [...strokesRef.current, current as Stroke];
+          strokesRef.current = next;
+          onChange(next);
+        }
       }
-      drawing.current = null;
-      setLive(null);
+      flushDeskSave();
     }
     if (!touches.current.size) multiTouch.current = false;
   }
