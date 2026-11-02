@@ -1,4 +1,4 @@
-// Regression harness: screenshots at 4 sizes + feature checklist + ink round-trip.
+// Regression harness: screenshots at 6 sizes + feature checklist + ink round-trip.
 // Usage: node tests/e2e/run.mjs <baseUrl> <outDir>
 import { chromium } from "playwright";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -7,6 +7,8 @@ const base = process.argv[2] ?? "http://127.0.0.1:8081/";
 const out = process.argv[3] ?? "tests/e2e/out";
 mkdirSync(out, { recursive: true });
 const SIZES = [
+  { name: "phone-small", width: 360, height: 740, touch: true },
+  { name: "phone-large", width: 430, height: 932, touch: true },
   { name: "phone", width: 390, height: 844, touch: true },
   { name: "tablet", width: 768, height: 1024, touch: true },
   { name: "laptop", width: 1366, height: 800 },
@@ -57,6 +59,30 @@ for (const s of SIZES) {
   await openBook(page);
   await freeze(page);
   await page.screenshot({ path: `${out}/${s.name}-book.png` });
+  if (s.touch) {
+    // Native nearest scrolling must account for the fixed navigation, even for
+    // the wrapped toolbar and the writing desk's final Save note button.
+    const controls = page.locator(".book-tools button, .book-tools input");
+    check(`${s.name}: writing desk available`, await page.locator(".ink-tray").isVisible());
+    for (let i = 0; i < await controls.count(); i++) {
+      const control = controls.nth(i);
+      const hit = await control.evaluate((element) => {
+        element.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
+        const r = element.getBoundingClientRect();
+        const bar = document.querySelector(".tabbar").getBoundingClientRect();
+        return {
+          label: element.getAttribute("aria-label") || element.textContent.trim() || element.type,
+          detail: `top=${r.top} bottom=${r.bottom} bar=${bar.top} hit=${document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.outerHTML.slice(0, 160)}`,
+          reachable: r.top >= 0 && r.bottom <= bar.top &&
+            document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) === element,
+        };
+      });
+      check(`${s.name}: control reachable ${hit.label}`, hit.reachable, hit.reachable ? "" : hit.detail);
+    }
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    check(`${s.name}: final control clears tabbar at bottom`, await page.getByRole("button", { name: "Save note", exact: true }).evaluate((element) =>
+      element.getBoundingClientRect().bottom <= document.querySelector(".tabbar").getBoundingClientRect().top));
+  }
   check(`${s.name}: no console errors`, errors.length === 0, errors.slice(0, 2).join(" | "));
   await ctx.close();
 }
@@ -263,6 +289,45 @@ for (const s of SIZES) {
   await leaf.waitFor({ timeout: 60000 });
   await page.waitForTimeout(3000);
   check("resume: immediate reload flushes leaf turn", await leaf.inputValue() === "6");
+  await ctx.close();
+}
+// Opt-in: real pack download and inference, never a mocked translation.
+if (process.env.RUN_TRANSLATE === "1") {
+  const ctx = await browser.newContext({ viewport: { width: 1366, height: 800 }, reducedMotion: "reduce" });
+  const page = await ctx.newPage();
+  await page.goto(base, { waitUntil: "networkidle", timeout: 90000 });
+  await openBook(page);
+  await page.getByRole("button", { name: "Next page", exact: true }).click();
+  await page.waitForTimeout(1500);
+  const prose = page.locator(".page-static.top .page-prose");
+  const original = await prose.innerText();
+  await page.getByLabel("Translate", { exact: true }).selectOption("es");
+  await page.locator("[data-translation]").waitFor({ timeout: 600000 });
+  const spanish = await page.locator("[data-translation]").innerText();
+  check("translation: Spanish replaces leaf 1", spanish !== original && /Machine translation: OPUS-MT/.test(spanish) && /[áéíóúñ¿¡]|\b(el|la|de|que|una)\b/i.test(spanish));
+  await page.screenshot({ path: `${out}/translate-es.png` });
+  await page.getByRole("button", { name: "Original", exact: true }).click();
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: `${out}/translate-original.png` });
+  check("translation: Original restores exact text", await prose.innerText() === original);
+  await ctx.setOffline(true);
+  await page.getByRole("button", { name: "Original", exact: true }).click();
+  await page.locator("[data-translation]").waitFor({ timeout: 30000 });
+  check("translation: cached leaf works offline", await page.locator("[data-translation]").innerText() === spanish);
+  await ctx.setOffline(false);
+  const offlinePage = await ctx.newPage();
+  await offlinePage.goto(base, { waitUntil: "networkidle", timeout: 90000 });
+  await openBook(offlinePage);
+  for (let i = 0; i < 4; i++) {
+    await offlinePage.getByRole("button", { name: "Next page", exact: true }).click();
+    await offlinePage.waitForTimeout(1100);
+  }
+  await ctx.setOffline(true);
+  await offlinePage.getByLabel("Translate", { exact: true }).selectOption("es");
+  await offlinePage.waitForFunction(() => document.querySelector('[data-translation]') || document.querySelector('[role="status"]')?.textContent?.includes('unavailable'), null, { timeout: 180000 });
+  const offlineError = await offlinePage.locator('[role="status"]').allTextContents();
+  if (offlineError.some((text) => text.includes('unavailable'))) throw new Error(offlineError.join(' '));
+  check("translation: fresh worker translates uncached leaf offline", await offlinePage.locator("[data-translation]").count() === 1);
   await ctx.close();
 }
 await browser.close();

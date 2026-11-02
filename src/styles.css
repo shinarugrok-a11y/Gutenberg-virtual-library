@@ -1072,3 +1072,27 @@ body {
   color: var(--color-amber);
   font-size: 0.85rem;
 }
+
+/* Reserve the fixed navigation, including the home indicator, only below desktop. */
+@media (width < 1180px) {
+  html {
+    --tabbar-height: calc(3.4rem + 1px);
+  }
+
+  .layout {
+    padding-bottom: calc(max(6.5rem, var(--tabbar-height)) + env(safe-area-inset-bottom, 0px));
+  }
+
+  .tabbar {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Keep toolbar controls above navigation without shifting shelf/book-open scrolling. */
+  .book-tools :is(button, input, textarea, select) {
+    scroll-margin-bottom: calc(var(--tabbar-height) + env(safe-area-inset-bottom, 0px) + 1px);
+  }
+
+  .book-tools button svg {
+    pointer-events: none;
+  }
+}
