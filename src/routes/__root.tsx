@@ -14,7 +14,7 @@ export const Route = createRootRoute({
       {
         name: "description",
         content:
-          "Night Desk is a reading radio for Project Gutenberg. Tune any book, turn the page, ink the margin, and ask only the text on the desk.",
+          "Night Desk is a reading radio for Project Gutenberg. Cloth spines on the shelf, ink that stays on the page, notes in the margin, and a room in chalkboard, forest, or vintage.",
       },
       { name: "theme-color", content: "#241912" },
     ],

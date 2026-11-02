@@ -32,16 +32,20 @@ function LeafBody({
   ink: ReactNode;
   comments: string[];
 }) {
-  const extra = comments.length > 0;
-  const notes = extra ? (
+  const extra = true;
+  const notes = (
     <aside className="page-notes" aria-label="Notes on this page">
-      {comments.map((comment) => (
-        <p key={comment} className="margin-note">
-          {comment}
-        </p>
-      ))}
+      {comments.length === 0 ? (
+        <p className="margin-hint">margin</p>
+      ) : (
+        comments.map((comment) => (
+          <p key={comment} className="margin-note">
+            {comment}
+          </p>
+        ))
+      )}
     </aside>
-  ) : null;
+  );
   if (index <= 0) {
     return (
       <div className="page-scroll">
@@ -57,7 +61,7 @@ function LeafBody({
             {status === "loading" && "The pages are coming up from the stacks."}
             {status === "error" && (error || "This text didn't arrive.")}
             {status === "ready" &&
-              `${words.toLocaleString()} words on ${pageCount.toLocaleString()} pages. The type is set. Turn the leaf from the spine.`}
+              `${words.toLocaleString()} words on ${pageCount.toLocaleString()} pages. Draw on this leaf. The stroke stays. A note sits in the margin.`}
             {status === "idle" && "Waiting on the shelf."}
           </p>
           <p className="page-kicker">Public-domain text via Project Gutenberg.</p>

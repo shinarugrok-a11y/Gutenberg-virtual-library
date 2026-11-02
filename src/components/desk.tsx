@@ -32,7 +32,7 @@ export function Desk() {
     });
   }, []);
   const [onAir, setOnAir] = useState(false);
-  const [pane, setPane] = useState<Pane>("tune");
+  const [pane, setPane] = useState<Pane>("read");
   const [askOpen, setAskOpen] = useState(false);
   const [spinning, setSpinning] = useState(false);
   const [spinError, setSpinError] = useState<string | null>(null);
@@ -206,26 +206,32 @@ export function Desk() {
         </div>
         <div className={`${pane === "read" ? "block" : "hidden"} show-wide`}>
           {card ? (
-            <BookStage
-              key={card.id}
-              card={card}
-              blocks={edition?.blocks ?? []}
-              words={edition?.words ?? 0}
-              leaf={leaf}
-              onLeaf={setLeaf}
-              onPages={onPages}
-              onAir={onAir}
-              onStopAir={stopAir}
-              motion={motionOn}
-              status={status}
-              error={bookError}
-            />
+            <div className="read-well">
+              <div className="reading-rail">
+                <p className="eyebrow">Still on the shelf</p>
+                <SpineWall books={shelf?.books ?? []} activeId={card.id} onOpen={open} perShelf={12} />
+              </div>
+              <BookStage
+                key={card.id}
+                card={card}
+                blocks={edition?.blocks ?? []}
+                words={edition?.words ?? 0}
+                leaf={leaf}
+                onLeaf={setLeaf}
+                onPages={onPages}
+                onAir={onAir}
+                onStopAir={stopAir}
+                motion={motionOn}
+                status={status}
+                error={bookError}
+              />
+            </div>
           ) : (
-            <div className="panel wall-stage only-wide">
+            <div className="panel wall-stage">
               <p className="eyebrow">The collection</p>
               <h2 className="wall-title">A quiet place to lose your place.</h2>
               <p className="text-muted wall-lede">
-                Cloth spines on the shelf. Open one and the ink stays on the page — pen, pencil, brush, the same five colors.
+                Cloth on the spine. Open one and draw on the leaf — the stroke stays on that page, and the note sits in the margin.
               </p>
               {pickingBand ? (
                 <p className="text-muted mt-4 text-sm">Choose a band in the catalog. The shelf will stand up in that order.</p>
