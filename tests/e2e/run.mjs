@@ -112,6 +112,45 @@ for (const s of SIZES) {
   check("ink-fast-reload: stroke saved when the page closes right after drawing", fast >= 2, `strokes=${fast}`);
   await ctx.close();
 }
+// Opt-in: real pack download and inference, never a mocked translation.
+if (process.env.RUN_TRANSLATE === "1") {
+  const ctx = await browser.newContext({ viewport: { width: 1366, height: 800 }, reducedMotion: "reduce" });
+  const page = await ctx.newPage();
+  await page.goto(base, { waitUntil: "networkidle", timeout: 90000 });
+  await openBook(page);
+  await page.getByRole("button", { name: "Next page", exact: true }).click();
+  await page.waitForTimeout(1500);
+  const prose = page.locator(".page-static.top .page-prose");
+  const original = await prose.innerText();
+  await page.getByLabel("Translate", { exact: true }).selectOption("es");
+  await page.locator("[data-translation]").waitFor({ timeout: 600000 });
+  const spanish = await page.locator("[data-translation]").innerText();
+  check("translation: Spanish replaces leaf 1", spanish !== original && /Machine translation: OPUS-MT/.test(spanish) && /[áéíóúñ¿¡]|\b(el|la|de|que|una)\b/i.test(spanish));
+  await page.screenshot({ path: `${out}/translate-es.png` });
+  await page.getByRole("button", { name: "Original", exact: true }).click();
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: `${out}/translate-original.png` });
+  check("translation: Original restores exact text", await prose.innerText() === original);
+  await ctx.setOffline(true);
+  await page.getByRole("button", { name: "Original", exact: true }).click();
+  await page.locator("[data-translation]").waitFor({ timeout: 30000 });
+  check("translation: cached leaf works offline", await page.locator("[data-translation]").innerText() === spanish);
+  await ctx.setOffline(false);
+  const offlinePage = await ctx.newPage();
+  await offlinePage.goto(base, { waitUntil: "networkidle", timeout: 90000 });
+  await openBook(offlinePage);
+  for (let i = 0; i < 4; i++) {
+    await offlinePage.getByRole("button", { name: "Next page", exact: true }).click();
+    await offlinePage.waitForTimeout(1100);
+  }
+  await ctx.setOffline(true);
+  await offlinePage.getByLabel("Translate", { exact: true }).selectOption("es");
+  await offlinePage.waitForFunction(() => document.querySelector('[data-translation]') || document.querySelector('[role="status"]')?.textContent?.includes('unavailable'), null, { timeout: 180000 });
+  const offlineError = await offlinePage.locator('[role="status"]').allTextContents();
+  if (offlineError.some((text) => text.includes('unavailable'))) throw new Error(offlineError.join(' '));
+  check("translation: fresh worker translates uncached leaf offline", await offlinePage.locator("[data-translation]").count() === 1);
+  await ctx.close();
+}
 await browser.close();
 writeFileSync(`${out}/results.json`, JSON.stringify(results, null, 2));
 // Known failures (documented bugs not yet fixed). A fix PR removes its entry.
