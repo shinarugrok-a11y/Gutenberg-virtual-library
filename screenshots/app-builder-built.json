@@ -1,0 +1,41 @@
+{
+  "url": "http://127.0.0.1:8081/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Night Desk",
+      "hasCanvas": false,
+      "bodyTextLen": 738,
+      "bodyTextHash": "17e930468ac52449981d472798855e2cf25f6935f47c95589a27319b51955706",
+      "bodyTextPrefix": "STATION K-GUT Night Desk 91.1 TUNED The whole Gutenberg shelf Th",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-built.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Night Desk",
+      "hasCanvas": false,
+      "bodyTextLen": 346,
+      "bodyTextHash": "b75f208d5fa737ca444f0e80cd989a2d574f5395cc7fd23819758aa7eaf3b53b",
+      "bodyTextPrefix": "STATION K-GUT Night Desk 91.1 TUNED The whole Gutenberg shelf Th",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-built-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-built.json",
+  "divergesFromBaseline": true,
+  "baselineReasons": [
+    "desktop: body text collapsed (3085 -> 738 chars)",
+    "mobile: body text collapsed (2693 -> 346 chars)"
+  ]
+}

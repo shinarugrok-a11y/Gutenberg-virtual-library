@@ -1,0 +1,36 @@
+{
+  "url": "http://127.0.0.1:8080/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Night Desk",
+      "hasCanvas": false,
+      "bodyTextLen": 3085,
+      "bodyTextHash": "6289f0a6fb44887f9d4036f780c80c67bfa4b028a65fa5424bd0edc221453f38",
+      "bodyTextPrefix": "STATION K-GUT Night Desk 91.1 TUNED The whole Gutenberg shelf Th",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Night Desk",
+      "hasCanvas": false,
+      "bodyTextLen": 2693,
+      "bodyTextHash": "e2fc413e59698131124ac68b31ccc5096e52396c14e6a2ed67593e0137179bea",
+      "bodyTextPrefix": "STATION K-GUT Night Desk 91.1 TUNED The whole Gutenberg shelf Th",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-preview.json"
+}
