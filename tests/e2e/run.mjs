@@ -87,6 +87,102 @@ for (const s of SIZES) {
   await ctx.close();
 }
 
+// Touch pointer routing checks supplement native gesture checks below.
+{
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, reducedMotion: "reduce" });
+  const page = await ctx.newPage();
+  await page.goto(base, { waitUntil: "networkidle" });
+  await openBook(page);
+  const route = async (kind) => page.evaluate(async (kind) => {
+    const c = document.querySelector(".ink-layer canvas");
+    const r = c.getBoundingClientRect();
+    const emit = (type, id, x, y, extra = {}) => c.dispatchEvent(new PointerEvent(type, {
+      bubbles: true, cancelable: true, pointerType: "touch", pointerId: id,
+      clientX: r.left + x, clientY: r.top + y, width: 8, height: 8, ...extra,
+    }));
+    const count = () => (localStorage.getItem("nightdesk.v1")?.match(/"points"/g) || []).length;
+    const before = count();
+    emit("pointerdown", 31, 65, 90, kind === "palm" ? { width: 60 } : {});
+    emit("pointermove", 31, 95, 110);
+    if (kind === "multi") emit("pointerdown", 32, 140, 120);
+    emit("pointermove", 31, 120, 130);
+    emit("pointerup", 31, 120, 130);
+    if (kind === "multi") emit("pointerup", 32, 140, 120);
+    await new Promise(resolve => setTimeout(resolve, 500));
+    return count() - before;
+  }, kind);
+  check("touch: second finger cancels stroke", await route("multi") === 0);
+  check("touch: palm ignored", await route("palm") === 0);
+  check("touch: text stroke saved", await route("draw") === 1);
+  const penPalm = await page.evaluate(async () => {
+    const c = document.querySelector(".ink-layer canvas");
+    const r = c.getBoundingClientRect();
+    const count = () => (localStorage.getItem("nightdesk.v1")?.match(/"points"/g) || []).length;
+    const before = count();
+    const emit = (type, id, pointerType, x, y) => c.dispatchEvent(new PointerEvent(type, {
+      bubbles: true, cancelable: true, pointerId: id, pointerType,
+      clientX: r.left + x, clientY: r.top + y, width: 8, height: 8,
+    }));
+    emit("pointerdown", 71, "pen", 70, 100);
+    emit("pointerdown", 72, "touch", 90, 100);
+    emit("pointerdown", 73, "touch", 110, 100);
+    emit("pointermove", 71, "pen", 140, 140);
+    emit("pointerup", 72, "touch", 90, 100);
+    emit("pointerup", 73, "touch", 110, 100);
+    emit("pointerup", 71, "pen", 140, 140);
+    emit("pointerdown", 74, "touch", 80, 110);
+    emit("pointermove", 74, "touch", 160, 150);
+    emit("pointerup", 74, "touch", 160, 150);
+    await new Promise(resolve => setTimeout(resolve, 550));
+    return count() - before;
+  });
+  check("pen: palm and recent touches leave pen stroke intact", penPalm === 1);
+
+  const leaf = page.locator('input[aria-label="Page"]');
+  const before = await leaf.inputValue();
+  const cdp = await ctx.newCDPSession(page);
+  const edgeBox = await page.locator(".ink-layer canvas").first().boundingBox();
+  const edgeX = Math.min(385, edgeBox.x + edgeBox.width - 8);
+  const edgeY = edgeBox.y + 120;
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: edgeX, y: edgeY, id: 1 }] });
+  for (let i = 1; i <= 8; i++) {
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: edgeX - i * 12, y: edgeY, id: 1 }] });
+  }
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await page.waitForTimeout(1200);
+  check("touch: edge swipe turns page", await leaf.inputValue() !== before);
+  // Real browser touch input: two fingers must pan overflowing page content.
+  await page.evaluate(() => {
+    const scroll = document.querySelector(".page-scroll");
+    scroll.classList.add("has-extra");
+    scroll.querySelector(".page-inner").style.minHeight = "1400px";
+    scroll.scrollIntoView({ block: "center" });
+  });
+  const rect = await page.locator(".page-scroll").first().boundingBox();
+  const x = rect.x + rect.width / 2;
+  const y = Math.max(100, Math.min(600, rect.y + 200));
+  const countStrokes = () => page.evaluate(() => (localStorage.getItem("nightdesk.v1")?.match(/"points"/g) || []).length);
+  const singleBefore = await countStrokes();
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y, id: 1 }] });
+  for (let i = 1; i <= 8; i++) {
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: x + i * 3, y: y + i * 5, id: 1 }] });
+  }
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await page.waitForTimeout(500);
+  check("touch: native single-finger drawing saved", await countStrokes() === singleBefore + 1);
+  const storedBefore = await page.evaluate(() => localStorage.getItem("nightdesk.v1"));
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: x - 25, y, id: 1 }, { x: x + 25, y, id: 2 }] });
+  for (let i = 1; i <= 8; i++) {
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: x - 25, y: y - i * 12, id: 1 }, { x: x + 25, y: y - i * 12, id: 2 }] });
+    await page.waitForTimeout(25);
+  }
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await page.waitForTimeout(500);
+  check("touch: native two-finger scroll", await page.locator(".page-scroll").first().evaluate(el => el.scrollTop > 0));
+  check("touch: native two-finger scroll adds no ink", await page.evaluate(() => localStorage.getItem("nightdesk.v1")) === storedBefore);
+  await ctx.close();
+}
+
 // Feature checklist + ink round trip (laptop size, mouse)
 {
   const ctx = await browser.newContext({ viewport: { width: 1366, height: 800 }, reducedMotion: "reduce" });
@@ -136,6 +232,30 @@ for (const s of SIZES) {
   await page.reload({ waitUntil: "networkidle" });
   const fast = await page.evaluate(() => (localStorage.getItem("nightdesk.v1")?.match(/"points"/g) || []).length);
   check("ink-fast-reload: stroke saved when the page closes right after drawing", fast >= 2, `strokes=${fast}`);
+  if (!(await page.locator(".ink-layer canvas").count())) await openBook(page);
+  await page.getByRole("button", { name: "Ink", exact: true }).click();
+  await page.evaluate(() => {
+    const scroll = document.querySelector(".page-scroll");
+    scroll.classList.add("has-extra");
+    scroll.querySelector(".page-inner").style.minHeight = "1800px";
+    scroll.scrollIntoView({ block: "center" });
+  });
+  const wheelBox = await page.locator(".page-scroll").first().boundingBox();
+  const deskBefore = await page.evaluate(() => window.scrollY);
+  await page.mouse.move(wheelBox.x + wheelBox.width / 2, wheelBox.y + 120);
+  await page.mouse.wheel(0, 240);
+  await page.waitForTimeout(300);
+  check("wheel: extra content scrolls inside page", await page.locator(".page-scroll").first().evaluate(el => el.scrollTop > 0));
+  check("wheel: desk stays in place", await page.evaluate(() => window.scrollY) === deskBefore);
+  const uncloaked = await inkPixels(page);
+  const closedCanvas = await page.locator(".ink-layer canvas").first().boundingBox();
+  await page.mouse.move(closedCanvas.x + 70, wheelBox.y + 100);
+  await page.mouse.down();
+  await page.mouse.move(closedCanvas.x + 150, wheelBox.y + 140, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  check("ink: draws with toolbar closed", await inkPixels(page) > uncloaked);
+
   await ctx.close();
 }
 await browser.close();

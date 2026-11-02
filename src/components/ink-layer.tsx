@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { flushDeskSave } from "@/lib/desk-store";
 import { eraseNear, type Stroke, type Tool } from "@/lib/notes";
 
-type Live = Stroke | null;
+type Live = (Omit<Stroke, "tool"> & { tool: Tool }) | null;
+// Shared across page instances, including a page turn immediately after pen use.
+let penActive = false;
+let penUsedAt = 0;
 
 function paint(ctx: CanvasRenderingContext2D, strokes: Stroke[], width: number, height: number) {
   ctx.clearRect(0, 0, width, height);
@@ -53,6 +57,7 @@ export function InkLayer({
   size,
   strokes,
   onChange,
+  onTurn,
 }: {
   active: boolean;
   tool: Tool;
@@ -60,10 +65,65 @@ export function InkLayer({
   size: number;
   strokes: Stroke[];
   onChange: (strokes: Stroke[]) => void;
+  onTurn: (dir: 1 | -1) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const [live, setLive] = useState<Live>(null);
+  const [live, renderLive] = useState<Live>(null);
+  const liveRef = useRef<Live>(null);
+  function setLive(value: Live) { liveRef.current = value; renderLive(value); }
+  const drawing = useRef<number | null>(null);
+  const touches = useRef(new Set<number>());
+  const multiTouch = useRef(false);
+  const edge = useRef<{ id: number; x: number; y: number } | null>(null);
+  const turnRef = useRef(onTurn);
+  turnRef.current = onTurn;
+
+  // Pointer preventDefault alone does not suppress browser touch panning. Keep
+  // native multi-touch enabled and suppress only an accepted drawing finger.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const start = (event: TouchEvent) => {
+      if (penActive || Date.now() - penUsedAt < 500) return;
+      if (event.touches.length > 1) {
+        multiTouch.current = true;
+        drawing.current = null;
+        edge.current = null;
+        setLive(null);
+      }
+    };
+    const move = (event: TouchEvent) => {
+      if (event.touches.length === 1 && !multiTouch.current && drawing.current !== null) event.preventDefault();
+    };
+    const end = (event: TouchEvent) => {
+      const swipe = edge.current;
+      if (swipe && !multiTouch.current && event.touches.length === 0) {
+        const touch = event.changedTouches[0];
+        if (touch) finishSwipe(touch.clientX, touch.clientY);
+      }
+      if (!event.touches.length) { multiTouch.current = false; touches.current.clear(); }
+    };
+    canvas.addEventListener("touchstart", start, { passive: true });
+    canvas.addEventListener("touchmove", move, { passive: false });
+    canvas.addEventListener("touchend", end);
+    const abort = () => { edge.current = null; touches.current.clear(); multiTouch.current = false; drawing.current = null; setLive(null); };
+    canvas.addEventListener("touchcancel", abort);
+    return () => {
+      canvas.removeEventListener("touchstart", start);
+      canvas.removeEventListener("touchmove", move);
+      canvas.removeEventListener("touchend", end);
+      canvas.removeEventListener("touchcancel", abort);
+    };
+  }, []);
+
+  function finishSwipe(x: number, y: number) {
+    const swipe = edge.current;
+    edge.current = null;
+    if (!swipe) return;
+    const dx = x - swipe.x;
+    if (Math.abs(dx) >= 40 && Math.abs(dx) > Math.abs(y - swipe.y) * 1.5) turnRef.current(dx < 0 ? 1 : -1);
+  }
   const strokesRef = useRef(strokes);
   strokesRef.current = strokes;
 
@@ -79,7 +139,7 @@ export function InkLayer({
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      paint(ctx, live ? [...strokes, live] : strokes, rect.width, rect.height);
+      paint(ctx, live && live.tool !== "eraser" ? [...strokes, live as Stroke] : strokes, rect.width, rect.height);
     };
     draw();
     const observer = new ResizeObserver(draw);
@@ -98,48 +158,106 @@ export function InkLayer({
 
   function down(event: PointerEvent<HTMLCanvasElement>) {
     if (!active) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    const point = pointOf(event);
-    if (tool === "eraser") {
-      onChange(eraseNear(strokesRef.current, point.x, point.y, size / 180));
-      return;
+    if (event.pointerType === "pen") {
+      penActive = true;
+      penUsedAt = Date.now();
+      drawing.current = null;
+      setLive(null);
+    }
+    if (event.pointerType === "touch") {
+      if (penActive || Date.now() - penUsedAt < 500 || event.width > 40 || event.height > 40) return;
+      touches.current.add(event.pointerId);
+      if (touches.current.size > 1) {
+        multiTouch.current = true;
+        drawing.current = null;
+        edge.current = null;
+        setLive(null);
+      }
+      if (multiTouch.current) return;
+      const inner = wrapRef.current!.parentElement!;
+      const rect = inner.getBoundingClientRect();
+      const style = getComputedStyle(inner);
+      const left = Math.max(24, parseFloat(style.paddingLeft));
+      const right = Math.max(24, parseFloat(style.paddingRight));
+      if (event.clientX < rect.left + 24 || event.clientX > rect.right - 24) {
+        edge.current = { id: event.pointerId, x: event.clientX, y: event.clientY };
+        return;
+      }
+      if (event.clientX < rect.left + left || event.clientX > rect.right - right ||
+          event.clientY < rect.top + Math.max(24, parseFloat(style.paddingTop)) ||
+          event.clientY > rect.bottom - Math.max(24, parseFloat(style.paddingBottom))) return;
+    }
+    if (drawing.current !== null || (event.pointerType === "mouse" && event.button !== 0)) return;
+    event.preventDefault();
+    drawing.current = event.pointerId;
+    if (event.nativeEvent.isTrusted) event.currentTarget.setPointerCapture(event.pointerId);
+    if (tool === "eraser" && event.pointerType !== "touch") {
+      const point = pointOf(event);
+      const next = eraseNear(strokesRef.current, point.x, point.y, size / 180);
+      strokesRef.current = next;
+      onChange(next);
     }
     setLive({
       id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-      tool,
-      color,
-      size,
-      points: [point],
+      tool, color, size, points: [pointOf(event)],
     });
   }
 
   function move(event: PointerEvent<HTMLCanvasElement>) {
-    if (!active || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
-    const point = pointOf(event);
-    if (tool === "eraser") {
-      onChange(eraseNear(strokesRef.current, point.x, point.y, size / 180));
+    if (!active || drawing.current !== event.pointerId) return;
+    if (event.pointerType === "touch" && (event.width > 40 || event.height > 40 || penActive || Date.now() - penUsedAt < 500)) {
+      drawing.current = null;
+      setLive(null);
       return;
     }
-    setLive((current) => {
-      if (!current) return current;
-      const last = current.points[current.points.length - 1];
-      if (!last) return current;
-      const dx = last.x - point.x;
-      const dy = last.y - point.y;
-      if (dx * dx + dy * dy < 0.000004) return current;
-      const jitter = tool === "pencil" ? (Math.random() - 0.5) * 0.004 : 0;
-      const next = { x: point.x + jitter, y: point.y + jitter };
-      if (current.points.length > 1600) return current;
-      return { ...current, points: [...current.points, next] };
-    });
+    event.preventDefault();
+    if (event.pointerType === "pen") penUsedAt = Date.now();
+    const current = liveRef.current;
+    if (!current) return;
+    const point = pointOf(event);
+    if (current.tool === "eraser" && event.pointerType !== "touch") {
+      const next = eraseNear(strokesRef.current, point.x, point.y, size / 180);
+      strokesRef.current = next;
+      onChange(next);
+      return;
+    }
+    const last = current.points[current.points.length - 1]!;
+    if ((last.x - point.x) ** 2 + (last.y - point.y) ** 2 < 0.000004 || current.points.length > 1600) return;
+    const jitter = current.tool === "pencil" ? (Math.random() - 0.5) * 0.004 : 0;
+    setLive({ ...current, points: [...current.points, { x: point.x + jitter, y: point.y + jitter }] });
   }
 
-  function up() {
-    if (tool === "eraser") return;
-    setLive((current) => {
-      if (current && current.points.length > 1) onChange([...strokesRef.current, current]);
-      return null;
-    });
+  function up(event: PointerEvent<HTMLCanvasElement>) {
+    if (event.pointerType === "pen") { penActive = false; penUsedAt = Date.now(); }
+    touches.current.delete(event.pointerId);
+    if (edge.current?.id === event.pointerId && !multiTouch.current) finishSwipe(event.clientX, event.clientY);
+    if (drawing.current === event.pointerId) {
+      const current = liveRef.current;
+      // Clear synchronously before publishing; React rendering must not own commits.
+      drawing.current = null;
+      setLive(null);
+      if (current && (current.points.length > 1 || current.tool === "eraser")) {
+        if (current.tool === "eraser") {
+          let next = strokesRef.current;
+          for (const point of current.points) next = eraseNear(next, point.x, point.y, current.size / 180);
+          strokesRef.current = next;
+          onChange(next);
+        } else if (!strokesRef.current.some((stroke) => stroke.id === current.id)) {
+          const next = [...strokesRef.current, current as Stroke];
+          strokesRef.current = next;
+          onChange(next);
+        }
+      }
+      flushDeskSave();
+    }
+    if (!touches.current.size) multiTouch.current = false;
+  }
+
+  function cancel(event: PointerEvent<HTMLCanvasElement>) {
+    if (event.pointerType === "pen") { penActive = false; penUsedAt = Date.now(); }
+    touches.current.delete(event.pointerId);
+    if (drawing.current === event.pointerId) { drawing.current = null; setLive(null); }
+    // Keep the edge origin until touchend: native panning cancels pointer events.
   }
 
   return (
@@ -150,7 +268,8 @@ export function InkLayer({
         onPointerDown={down}
         onPointerMove={move}
         onPointerUp={up}
-        onPointerCancel={up}
+        onPointerCancel={cancel}
+        onLostPointerCapture={cancel}
       />
     </div>
   );
