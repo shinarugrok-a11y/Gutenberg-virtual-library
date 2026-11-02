@@ -45,7 +45,7 @@ function LeafBody({
   ) : null;
   if (index <= 0) {
     return (
-      <div className="page-scroll">
+      <div className={`page-scroll${extra ? " has-extra" : ""}`}>
         <div className={`page-inner title-leaf${extra ? " has-notes" : ""}`}>
           <p className="page-kicker">Project Gutenberg #{card.id}</p>
           <h2>{card.title}</h2>
@@ -70,7 +70,7 @@ function LeafBody({
   }
   const opensChapter = leaf?.blocks.some((block) => block.type === "heading" && block.level === 1) ?? false;
   return (
-    <div className="page-scroll">
+    <div className={`page-scroll${extra ? " has-extra" : ""}`}>
       <div className={`page-inner${extra ? " has-notes" : ""}`}>
         <p className="running-head">{opensChapter ? card.title : leaf?.chapter || card.title}</p>
         <Flow blocks={leaf?.blocks ?? []} cursor={cursor} lang={card.lang} />
@@ -128,6 +128,20 @@ export function BookStage({
   const [leaves, setLeaves] = useState<Leaf[]>(estimated);
   const cardRef = useRef<HTMLDivElement>(null);
   const measureRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const root = cardRef.current;
+    if (!root) return;
+    const wheel = (event: WheelEvent) => {
+      if (event.ctrlKey || !(event.target instanceof Element)) return;
+      const scroll = event.target.closest<HTMLElement>(".page-scroll.has-extra");
+      if (!scroll || scroll.scrollHeight <= scroll.clientHeight || !event.deltaY) return;
+      event.preventDefault();
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? scroll.clientHeight : 1;
+      scroll.scrollTop += event.deltaY * unit;
+    };
+    root.addEventListener("wheel", wheel, { passive: false });
+    return () => root.removeEventListener("wheel", wheel);
+  }, []);
   const placeRef = useRef("");
   const animRef = useRef<Anim | null>(null);
   const shown = pending ?? leaf;
@@ -314,7 +328,8 @@ export function BookStage({
     const pageStrokes = notes?.strokes[String(index)] ?? [];
     return (
       <InkLayer
-        active={interactive && inkOpen}
+        active={interactive}
+        onTurn={turn}
         tool={tool}
         color={ink.color}
         size={brush}
