@@ -52,6 +52,60 @@ type State = Persisted & {
   hydrate: (motionDefault: boolean) => void;
 };
 
+function cleanStrokes(value: unknown): Stroke[] {
+  if (!Array.isArray(value)) return [];
+  const tools = ["pen", "pencil", "brush", "marker"];
+  return value.filter(
+    (stroke): stroke is Stroke =>
+      Boolean(stroke) &&
+      typeof stroke.id === "string" &&
+      tools.includes(stroke.tool) &&
+      typeof stroke.color === "string" &&
+      Number.isFinite(stroke.size) &&
+      Array.isArray(stroke.points) &&
+      stroke.points.every((point: unknown) => {
+        const p = point as { x?: unknown; y?: unknown } | null;
+        return Boolean(p) && Number.isFinite(p!.x) && Number.isFinite(p!.y);
+      }),
+  );
+}
+
+/** Saved notes come from storage that other tabs, extensions or old versions may have written. */
+function cleanNotes(value: unknown): Record<string, BookNotes> {
+  if (!value || typeof value !== "object") return {};
+  const out: Record<string, BookNotes> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    const book = raw as Partial<BookNotes> | null;
+    const id = Number(key);
+    if (!book || typeof book !== "object" || !Number.isInteger(id) || id <= 0) continue;
+    const strokes: Record<string, Stroke[]> = {};
+    if (book.strokes && typeof book.strokes === "object") {
+      for (const [leaf, list] of Object.entries(book.strokes)) {
+        if (!/^\d+$/.test(leaf)) continue;
+        const clean = cleanStrokes(list);
+        if (clean.length) strokes[leaf] = clean;
+      }
+    }
+    const comments: MarginNote[] = Array.isArray(book.comments)
+      ? book.comments
+          .filter((c) => c && typeof c.text === "string" && Number.isInteger(c.leaf) && c.leaf >= 0)
+          .map((c, i) => ({ id: typeof c.id === "string" ? c.id : `restored-${i}`, leaf: c.leaf, text: c.text.slice(0, 2000), at: Number(c.at) || 0 }))
+      : [];
+    const qa: QaTurn[] = Array.isArray(book.qa)
+      ? book.qa.filter((t) => t && typeof t.q === "string" && typeof t.lead === "string" && Array.isArray(t.passages)).slice(-40)
+      : [];
+    out[key] = {
+      id,
+      title: typeof book.title === "string" ? book.title : "",
+      author: typeof book.author === "string" ? book.author : "",
+      strokes,
+      comments,
+      qa,
+    };
+  }
+  return out;
+}
+
 function blank(): Persisted {
   return {
     lastBook: null,
@@ -232,7 +286,7 @@ export const useDesk = create<State>((set, get) => ({
     if (!trimmed) return;
     const key = String(id);
     const current = get().notes[key] ?? { id, title: "", author: "", strokes: {}, comments: [], qa: [] };
-    const comment = { id: `${Date.now()}`, leaf, text: trimmed.slice(0, 2000), at: Date.now() };
+    const comment = { id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, leaf, text: trimmed.slice(0, 2000), at: Date.now() };
     set({
       notes: {
         ...get().notes,
@@ -288,12 +342,12 @@ export const useDesk = create<State>((set, get) => ({
         showPlaylist: data.showPlaylist !== false,
         showEq: Boolean(data.showEq),
         volume: typeof data.volume === "number" ? Math.min(1, Math.max(0, data.volume)) : 0.8,
-        eq: Array.isArray(data.eq) && data.eq.length === 5 ? data.eq.map((n) => Number(n) || 0) : [0, 0, 0, 0, 0],
+        eq: Array.isArray(data.eq) && data.eq.length === 5 ? data.eq.map((n) => Math.max(-12, Math.min(12, Number(n) || 0))) : [0, 0, 0, 0, 0],
         tool: tools.includes(data.tool as Tool) ? (data.tool as Tool) : "pen",
         inkId: INKS.some((ink) => ink.id === data.inkId) ? (data.inkId as string) : INKS[0]!.id,
-        brush: typeof data.brush === "number" ? data.brush : 2.5,
+        brush: typeof data.brush === "number" && data.brush >= 1.2 && data.brush <= 7 ? data.brush : 2.5,
         atmosphere: rooms.includes(data.atmosphere as Atmosphere) ? (data.atmosphere as Atmosphere) : "chalkboard",
-        notes: data.notes && typeof data.notes === "object" ? data.notes : {},
+        notes: cleanNotes(data.notes),
       });
     } catch {
       set({ motion: motionDefault });

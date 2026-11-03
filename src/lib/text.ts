@@ -21,8 +21,9 @@ export type Block =
 
 export type Edition = { blocks: Block[]; plain: string; words: number };
 
-export type Leaf = { blocks: Block[]; chapter: string; plain: string };
+export type Leaf = { blocks: Block[]; chapter: string; plain: string; tall?: boolean };
 
+// eslint-disable-next-line no-control-regex -- \u0001 is the private run sentinel written by typograph().
 const SENT = /\u0001(em|sup|sub)([\s\S]*?)\u0001/g;
 
 export function extractBody(raw: string): string {
@@ -152,7 +153,7 @@ function smartQuotes(input: string): string {
     const c = input[i];
     if (c === '"') {
       const prev = out.slice(-1) || " ";
-      const open = out.length === 0 || /[\s(\[{—–-]/.test(prev);
+      const open = out.length === 0 || /[\s([{—–-]/.test(prev);
       out += open ? "\u201c" : "\u201d";
       continue;
     }
@@ -163,7 +164,7 @@ function smartQuotes(input: string): string {
         out += "\u2019";
         continue;
       }
-      const open = i === 0 || /[\s(\[{—–\-"“]/.test(prev);
+      const open = i === 0 || /[\s([{—–\-"“]/.test(prev);
       out += open ? "\u2018" : "\u2019";
       continue;
     }
@@ -517,7 +518,10 @@ export function packLeaves(blocks: Block[], heightOf: (block: Block, index: numb
   let chapter = "";
   const push = () => {
     if (!cur.length) return;
-    leaves.push({ blocks: cur, chapter, plain: leafPlain(cur) });
+    const leaf: Leaf = { blocks: cur, chapter, plain: leafPlain(cur) };
+    // One block taller than the page cannot be split here; the page must scroll instead of clipping it.
+    if (used > room) leaf.tall = true;
+    leaves.push(leaf);
     cur = [];
     used = 0;
   };

@@ -12,19 +12,31 @@ const STOP = new Set(
   ),
 );
 
-function tokenize(input: string): string[] {
-  return (
+const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+
+export function tokenize(input: string): string[] {
+  const words =
     input
       .toLowerCase()
+      .normalize("NFKD")
+      .replace(/\p{M}/gu, "")
       .replace(/[’']/g, "")
-      .match(/[a-z0-9]+/g)
-      ?.filter((token) => token.length > 1 && !STOP.has(token)) ?? []
-  );
+      .match(/[\p{L}\p{N}]+/gu) ?? [];
+  const out: string[] = [];
+  for (const word of words) {
+    if (CJK.test(word)) {
+      // CJK has no spaces between words; overlapping character pairs are a robust stand-in.
+      const chars = [...word];
+      if (chars.length === 1) out.push(word);
+      for (let i = 0; i + 1 < chars.length; i++) out.push(chars[i]! + chars[i + 1]!);
+    } else if (word.length > 1 && !STOP.has(word)) out.push(word);
+  }
+  return out;
 }
 
 function sentencesOf(page: string): string[] {
-  const parts = page.match(/[^.!?]+[.!?]+(?:["')\]]+)?|[^.!?]+$/g) ?? [page];
-  return parts.map((part) => part.replace(/\s+/g, " ").trim()).filter((part) => part.length > 40);
+  const parts = page.match(/[^.!?。！？]+[.!?。！？]+(?:["'”’)\]]+)?|[^.!?。！？]+$/g) ?? [page];
+  return parts.map((part) => part.replace(/\s+/g, " ").trim()).filter((part) => part.length > (CJK.test(part) ? 8 : 40));
 }
 
 export function answerBook(question: string, pages: string[], title: string): BookAnswer {
@@ -93,8 +105,8 @@ export function answerBook(question: string, pages: string[], title: string): Bo
         const span = Math.max(...positions) - Math.min(...positions);
         score += 2.2 + Math.max(0, 2.4 - span / 8);
       }
-      const phrase = qTokens.join(" ");
-      if (sentence.toLowerCase().includes(phrase) && qTokens.length > 1) score += 1.4;
+      const phrase = tokenize(question).join(" ");
+      if (qTokens.length > 1 && tokens.join(" ").includes(phrase)) score += 1.4;
       score += Math.min(item.score, 4) * 0.05;
       if (sentence.length > 420) score *= 0.85;
       hits.push({ page: item.index + 1, text: sentence, score });

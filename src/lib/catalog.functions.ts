@@ -22,6 +22,7 @@ type Rec = {
   id: number;
   title: string;
   author: string;
+  authors: string;
   lang: string;
   year: number;
   shelves: string;
@@ -37,7 +38,7 @@ type Index = {
 };
 
 let indexPromise: Promise<Index> | null = null;
-const textCache = new Map<number, string>();
+const textCache = new Map<number, { text: string; truncated: boolean }>();
 const TEXT_CACHE_MAX = 5;
 
 const ORDERS: Order[] = ["title", "author", "newest", "popular", "genre"];
@@ -118,6 +119,7 @@ async function loadIndex(): Promise<Index> {
       id,
       title: (row[iTitle] ?? "").trim() || "Untitled",
       author: (row[iAuthor] ?? "").split(";")[0]?.trim() ?? "",
+      authors: row[iAuthor] ?? "",
       lang: (row[iLang] ?? "").trim().slice(0, 8),
       year: Number.isFinite(year) ? year : 0,
       shelves: row[iShelves] ?? "",
@@ -189,20 +191,26 @@ function readQuery(input: unknown): ShelfQuery {
 function filtered(index: Index, query: ShelfQuery): number[] {
   const order = query.order === "author" ? index.authorOrder : query.order === "newest" ? index.newestOrder : index.titleOrder;
   const q = query.q.toLowerCase();
+  // "#1342" is always a catalog number; a bare "1984" may be a number or a title word.
+  const strictId = /^#\d+$/.test(q);
   const idQuery = /^#?\d+$/.test(q) ? Number(q.replace("#", "")) : 0;
   const out: number[] = [];
   for (const indexOf of order) {
     const book = index.books[indexOf]!;
-    if (idQuery && book.id !== idQuery) continue;
+    if (strictId && book.id !== idQuery) continue;
     if (query.lang && book.lang !== query.lang) continue;
     if (query.genre && !matchGenre(book.shelves, query.genre)) continue;
     const letterSource = query.order === "author" ? book.author : book.title;
     if (query.letter && !matchLetter(letterSource, query.letter)) continue;
-    if (q && !idQuery) {
-      const hay = `${book.title} ${book.author} ${book.shelves}`.toLowerCase();
+    if (q && !strictId && book.id !== idQuery) {
+      const hay = `${book.title} ${book.authors} ${book.shelves}`.toLowerCase();
       if (!hay.includes(q)) continue;
     }
     out.push(indexOf);
+  }
+  if (idQuery && !strictId) {
+    const exact = out.findIndex((at) => index.books[at]!.id === idQuery);
+    if (exact > 0) out.unshift(...out.splice(exact, 1));
   }
   return out;
 }
@@ -248,7 +256,7 @@ export const searchShelf = createServerFn({ method: "GET" })
   .handler(async ({ data }): Promise<ShelfOk | ShelfErr> => {
     try {
       const index = await getIndex();
-      if (data.order === "popular" && !data.q && !data.genre && !data.letter) {
+      if (data.order === "popular" && !data.q && !data.genre && !data.letter && !data.lang) {
         const live = await fetchPopular(data.page);
         const books: Card[] = [];
         for (const id of live.ids) {
@@ -268,11 +276,12 @@ export const searchShelf = createServerFn({ method: "GET" })
           live: true,
         };
       }
-      const order: ShelfQuery =
-        data.order === "genre"
-          ? { ...data, order: "title" }
-          : data;
-      return pageOf(index, filtered(index, order), data.page);
+      // Gutenberg only publishes download ranks for the whole catalog, so a filtered
+      // "Borrowed" shelf is set by title and says so rather than showing a half-empty page.
+      const order: ShelfQuery = data.order === "genre" || data.order === "popular" ? { ...data, order: "title" } : data;
+      const result = pageOf(index, filtered(index, order), data.page);
+      if (data.order === "popular") result.note = "Borrowed counts aren't kept per filter, so this shelf is in title order";
+      return result;
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : "The card catalog didn't answer." };
     }
@@ -293,25 +302,27 @@ export const spinDial = createServerFn({ method: "GET" })
     }
   });
 
-function rememberText(id: number, text: string) {
+function rememberText(id: number, text: { text: string; truncated: boolean }) {
   textCache.set(id, text);
   if (textCache.size <= TEXT_CACHE_MAX) return;
   const oldest = textCache.keys().next().value;
   if (oldest != null) textCache.delete(oldest);
 }
 
-async function pullText(url: string): Promise<string | null> {
+const MAX_TEXT = 5_000_000;
+
+async function pullText(url: string): Promise<{ text: string; truncated: boolean } | null> {
   const res = await fetch(url, {
     headers: { "User-Agent": UA },
     redirect: "follow",
-    signal: AbortSignal.timeout(40_000),
+    signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) return null;
   const text = await res.text();
   if (!text || text.length < 200) return null;
   const head = text.slice(0, 200).toLowerCase();
   if (head.includes("<!doctype html") || head.includes("<html")) return null;
-  return text.length > 5_000_000 ? text.slice(0, 5_000_000) : text;
+  return text.length > MAX_TEXT ? { text: text.slice(0, MAX_TEXT), truncated: true } : { text, truncated: false };
 }
 
 export const fetchBookText = createServerFn({ method: "GET" })
@@ -323,17 +334,17 @@ export const fetchBookText = createServerFn({ method: "GET" })
   .handler(async ({ data }): Promise<BookTextOk | BookTextErr> => {
     try {
       const cached = textCache.get(data.id);
-      if (cached) return { ok: true, id: data.id, text: cached };
+      if (cached) return { ok: true, id: data.id, ...cached };
       const urls = [
         `https://www.gutenberg.org/cache/epub/${data.id}/pg${data.id}.txt`,
         `https://www.gutenberg.org/ebooks/${data.id}.txt.utf-8`,
         `https://www.gutenberg.org/files/${data.id}/${data.id}-0.txt`,
       ];
       for (const url of urls) {
-        const text = await pullText(url);
-        if (text) {
-          rememberText(data.id, text);
-          return { ok: true, id: data.id, text };
+        const pulled = await pullText(url).catch(() => null);
+        if (pulled) {
+          rememberText(data.id, pulled);
+          return { ok: true, id: data.id, ...pulled };
         }
       }
       return { ok: false, error: "This number has no plain text on the shelf. Try another edition." };

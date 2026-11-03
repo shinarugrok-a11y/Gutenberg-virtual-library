@@ -27,6 +27,8 @@ export function Shelf({
   total,
   pageCount,
   live,
+  note,
+  refreshing,
   genres,
   loading,
   error,
@@ -53,6 +55,8 @@ export function Shelf({
   total: number;
   pageCount: number;
   live: boolean;
+  note?: string;
+  refreshing?: boolean;
   genres: GenreStat[];
   loading: boolean;
   error: string | null;
@@ -151,13 +155,18 @@ export function Shelf({
         <>
           <p className="text-muted mt-3 text-sm">
             {live ? "Most borrowed, live from Project Gutenberg" : `${total.toLocaleString()} books`}
+            {note ? ` · ${note}` : ""}
             {genre ? ` · ${genres.find((item) => item.id === genre)?.label ?? "band"}` : ""}
           </p>
-          {wall === "sidebar" || wall === "narrow" ? (
-            <div className={wall === "narrow" ? "only-narrow" : undefined}>
-              <SpineWall books={books} activeId={activeId} onOpen={onOpen} perShelf={wall === "narrow" ? 12 : 7} />
-            </div>
-          ) : null}
+          {refreshing && (
+            <p className="text-muted mt-2 flex items-center gap-2 text-sm" role="status">
+              <LoaderCircle className="spin size-4" aria-hidden />
+              Turning the dial
+            </p>
+          )}
+          <div className={`${wall === "narrow" ? "only-narrow" : ""}${refreshing ? " is-stale" : ""}`} aria-busy={refreshing || undefined}>
+            <SpineWall books={books} activeId={activeId} onOpen={onOpen} perShelf={wall === "narrow" ? 12 : 7} />
+          </div>
           {!books.length && wall === "sidebar" && <p className="text-muted mt-3 text-sm">Nothing on this frequency.</p>}
           <div className="row-scroll mt-3">
             <button type="button" className="desk-btn" disabled={page <= 1} onClick={() => onPage(page - 1)}>

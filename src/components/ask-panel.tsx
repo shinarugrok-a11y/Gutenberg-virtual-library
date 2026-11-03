@@ -50,12 +50,12 @@ export function AskPanel({
         </button>
       </form>
       <div className="mt-4 flex flex-col gap-3">
-        {[...turns].reverse().map((turn) => (
-          <article key={turn.at} className="flex flex-col gap-2">
+        {[...turns].reverse().map((turn, turnIndex) => (
+          <article key={`${turn.at}-${turns.length - turnIndex}`} className="flex flex-col gap-2">
             <h3 className="text-lg">{turn.q}</h3>
             <p className="text-sm">{turn.lead}</p>
-            {turn.passages.map((passage) => (
-              <blockquote key={`${turn.at}-${passage.page}`} className="passage text-sm">
+            {turn.passages.map((passage, passageIndex) => (
+              <blockquote key={`${passage.page}-${passageIndex}`} className="passage text-sm">
                 <p>Page {passage.page}. {passage.text}</p>
                 <button type="button" className="desk-btn" onClick={() => onGoto(passage.page)}>
                   Turn to page {passage.page}

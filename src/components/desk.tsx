@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { BookOpen, Headphones, Library, Radio, ScrollText } from "lucide-react";
+import { BookOpen, Headphones, Library, Moon, Radio, ScrollText } from "lucide-react";
 import { fetchBookText, searchShelf, spinDial } from "@/lib/catalog.functions";
 import { flushDesk, useDesk } from "@/lib/desk-store";
 import { frequency, type Card, type Order } from "@/lib/shelf";
@@ -12,6 +12,8 @@ import { AskPanel } from "@/components/ask-panel";
 import { Winamp } from "@/components/winamp";
 
 type Pane = "read" | "tune" | "ask" | "music";
+
+const SLEEP_CHOICES = [15, 30, 45, 60, 90];
 
 export function Desk() {
   const [booted, setBooted] = useState(false);
@@ -43,6 +45,26 @@ export function Desk() {
   const lastBook = useDesk((s) => s.lastBook);
   const storageWarning = useDesk((s) => s.storageWarning);
   const stopAir = useCallback(() => setOnAir(false), []);
+  const [sleepEnd, setSleepEnd] = useState<number | null>(null);
+  const [sleepFade, setSleepFade] = useState(0);
+  const [clockNow, setClockNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (sleepEnd == null) return;
+    const tick = () => {
+      const now = Date.now();
+      setClockNow(now);
+      if (now >= sleepEnd) {
+        setSleepEnd(null);
+        setOnAir(false);
+        setSleepFade((value) => value + 1);
+      }
+    };
+    tick();
+    const timer = window.setInterval(tick, 5000);
+    return () => window.clearInterval(timer);
+  }, [sleepEnd]);
+  const sleepLeft = sleepEnd == null ? 0 : Math.max(1, Math.ceil((sleepEnd - clockNow) / 60_000));
 
   useEffect(() => {
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -78,6 +100,10 @@ export function Desk() {
 
   const edition = useMemo(() => (textQuery.data?.ok ? composeBook(textQuery.data.text) : null), [textQuery.data]);
   const shelf = shelfQuery.data?.ok ? shelfQuery.data : null;
+
+  useEffect(() => {
+    if (shelf && !shelfQuery.isPlaceholderData && !shelf.live && shelf.page < page) setPage(shelf.page);
+  }, [shelf, shelfQuery.isPlaceholderData, page]);
   const shelfError = shelfQuery.data && !shelfQuery.data.ok ? shelfQuery.data.error : shelfQuery.isError ? "The card catalog didn't answer." : null;
 
   function open(book: Card) {
@@ -147,6 +173,27 @@ export function Desk() {
             <ScrollText className="mr-1 inline size-4" aria-hidden />
             Ask
           </button>
+          <label className="sleep">
+            <Moon className="size-4" aria-hidden />
+            <select
+              className="desk-select compact"
+              aria-label="Sleep timer"
+              value={sleepEnd == null ? "" : "on"}
+              onChange={(event) => {
+                const minutes = Number(event.target.value);
+                setSleepEnd(minutes > 0 ? Date.now() + minutes * 60_000 : null);
+                setClockNow(Date.now());
+              }}
+            >
+              {sleepEnd != null && <option value="on">Lights out in {sleepLeft} min</option>}
+              <option value="">{sleepEnd != null ? "Cancel sleep timer" : "Sleep timer"}</option>
+              {SLEEP_CHOICES.map((minutes) => (
+                <option key={minutes} value={minutes}>
+                  {minutes} minutes
+                </option>
+              ))}
+            </select>
+          </label>
           <button type="button" className={`desk-btn${motionOn ? " is-on" : ""}`} aria-pressed={motionOn} onClick={() => setMotion(!motionOn)}>
             {motionOn ? "Animation on" : "Animation off"}
           </button>
@@ -165,6 +212,11 @@ export function Desk() {
           </label>
         </div>
       </header>
+      {storageWarning && (
+        <p className="warn storage-warn" role="alert">
+          This desk is full of ink and new notes are not being saved on this browser. Use Notes or JSON on the book to download them.
+        </p>
+      )}
       <div className="layout">
         <div className={`${pane === "tune" ? "block" : "hidden"} show-wide`}>
           <Shelf
@@ -198,6 +250,8 @@ export function Desk() {
             total={shelf?.total ?? 0}
             pageCount={shelf?.pageCount ?? 1}
             live={Boolean(shelf?.live)}
+            note={shelf?.note}
+            refreshing={shelfQuery.isFetching && shelfQuery.isPlaceholderData}
             genres={shelf?.genres ?? []}
             loading={shelfQuery.isPending}
             error={shelfError}
@@ -226,6 +280,7 @@ export function Desk() {
               motion={motionOn}
               status={status}
               error={bookError}
+              truncated={Boolean(textQuery.data?.ok && textQuery.data.truncated)}
             />
           ) : (
             <div className="panel wall-stage only-wide">
@@ -241,7 +296,6 @@ export function Desk() {
               )}
             </div>
           )}
-          {storageWarning && <p className="warn mt-2">This desk is full of ink. Download your notes before they stop saving on this browser.</p>}
         </div>
         <div className={`${pane === "ask" || pane === "music" ? "flex" : "hidden"} show-wide-flex flex-col gap-4`}>
           {card && (pane === "ask" || askOpen) && (
@@ -259,7 +313,7 @@ export function Desk() {
             </div>
           )}
           <div className={pane === "music" ? "block" : "hidden show-wide"}>
-            <Winamp onAir={onAir} motion={motionOn} />
+            <Winamp onAir={onAir} motion={motionOn} sleepFade={sleepFade} />
           </div>
         </div>
       </div>

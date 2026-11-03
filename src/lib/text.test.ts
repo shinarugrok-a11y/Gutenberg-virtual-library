@@ -169,7 +169,6 @@ test("ink and the margin note follow the sentence when the page size changes", (
   const comment: MarginNote = { id: "c1", leaf: 6, text: "Dorothea", at: 1 };
   const same = rebindMarks(oldPlains, oldPlains, { "6": [stroke] }, [comment]);
   assert.equal(same.moved, false);
-  assert.equal(same.strokes["6"], undefined === false ? same.strokes["6"] : same.strokes["6"]);
   assert.equal(same.strokes["6"]?.[0]?.id, "s1");
   const moved = rebindMarks(oldPlains, nextPlains, { "6": [stroke] }, [comment]);
   assert.equal(moved.moved, true);

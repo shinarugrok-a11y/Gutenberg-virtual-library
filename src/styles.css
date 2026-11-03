@@ -1053,6 +1053,57 @@ body {
 
 .playlist button.is-on { color: var(--p-lcd-fg); }
 
+.playlist-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.playlist-row > button:first-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playlist .playlist-remove {
+  flex: 0 0 auto;
+  min-width: 2.4rem;
+  display: grid;
+  place-items: center;
+  color: var(--p-muted);
+}
+
+.playlist .playlist-clear {
+  align-self: flex-start;
+  color: var(--p-muted);
+  text-decoration: underline;
+}
+
+.player-notice {
+  margin-bottom: 0;
+  padding: 0.45rem 0.6rem;
+  border-radius: 0.4rem;
+  border: 1px solid var(--p-lcd-fg);
+  color: var(--p-text);
+}
+
+.player button.transport:disabled { opacity: 0.45; cursor: default; }
+
+.sleep {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--color-muted);
+  font-size: 0.82rem;
+}
+
+.sleep-left {
+  color: var(--color-amber);
+  font-variant-numeric: tabular-nums;
+}
+
 .spin { animation: spin 0.8s linear infinite; }
 
 .sr-only {
@@ -1095,4 +1146,16 @@ body {
   .book-tools button svg {
     pointer-events: none;
   }
+}
+
+.is-stale {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.storage-warn {
+  margin: 0;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--color-line);
+  background: color-mix(in oklab, var(--color-amber) 12%, var(--color-cabinet));
 }

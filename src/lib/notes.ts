@@ -52,10 +52,17 @@ export function emptyNotes(card: Pick<Card, "id" | "title" | "author">): BookNot
 
 function settleLeaf(oldPlains: string[], nextPlains: string[], leaf: number): number {
   if (leaf <= 0) return leaf;
+  const fallback = nextPlains.length ? Math.min(leaf, nextPlains.length) : leaf;
   const snip = oldPlains[leaf - 1]?.slice(0, 40) ?? "";
-  if (!snip) return leaf;
-  const found = nextPlains.findIndex((plain) => plain.includes(snip));
-  return found >= 0 ? found + 1 : leaf;
+  if (!snip) return fallback;
+  // Repeated passages (refrains, letter openings) must resolve to the nearest copy, not the first.
+  const expected = oldPlains.length > 0 ? ((leaf - 1) / oldPlains.length) * nextPlains.length : leaf - 1;
+  let best = -1;
+  for (let i = 0; i < nextPlains.length; i++) {
+    if (!nextPlains[i]!.includes(snip)) continue;
+    if (best < 0 || Math.abs(i - expected) < Math.abs(best - expected)) best = i;
+  }
+  return best >= 0 ? best + 1 : fallback;
 }
 
 /** Move ink and margin notes onto the leaf that still holds the same words. */
@@ -92,7 +99,7 @@ export function eraseNear(strokes: Stroke[], x: number, y: number, radius: numbe
   for (const stroke of strokes) {
     let current: Pt[] = [];
     const flush = (points: Pt[]) => {
-      if (points.length > 1) out.push({ ...stroke, id: `${stroke.id}-${out.length}`, points });
+      if (points.length > 1) out.push({ ...stroke, id: `${stroke.id.split("~")[0]}~${Math.random().toString(36).slice(2, 9)}`, points });
     };
     for (const point of stroke.points) {
       const dx = point.x - x;
@@ -181,5 +188,6 @@ export function downloadText(filename: string, contents: string, type: string) {
   link.href = url;
   link.download = filename;
   link.click();
-  URL.revokeObjectURL(url);
+  // Safari starts the download asynchronously; revoking at once can cancel it.
+  window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
