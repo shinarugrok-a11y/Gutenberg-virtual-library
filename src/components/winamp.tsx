@@ -50,7 +50,21 @@ function megabytes(bytes: number) {
   return `${Math.round(bytes / MB)} MB`;
 }
 
-export function Winamp({ onAir, motion, sleepFade }: { onAir: boolean; motion: boolean; sleepFade: number }) {
+const SLEEP_CHOICES = [15, 30, 45, 60, 90];
+
+export function Winamp({
+  onAir,
+  motion,
+  sleepFade,
+  sleepLeft,
+  onSleep,
+}: {
+  onAir: boolean;
+  motion: boolean;
+  sleepFade: number;
+  sleepLeft: number | null;
+  onSleep: (minutes: number) => void;
+}) {
   const skin = useDesk((s) => s.skin);
   const lcd = useDesk((s) => s.lcd);
   const showPlaylist = useDesk((s) => s.showPlaylist);
@@ -389,6 +403,22 @@ export function Winamp({ onAir, motion, sleepFade }: { onAir: boolean; motion: b
         <p className="eyebrow" style={{ color: "var(--p-lcd-fg)" }}>
           Headphones
         </p>
+        <label className="sleep">
+          <select
+            className="transport"
+            aria-label="Sleep timer"
+            value={sleepLeft == null ? "" : "on"}
+            onChange={(event) => onSleep(Number(event.target.value))}
+          >
+            {sleepLeft != null && <option value="on">Lights out in {sleepLeft} min</option>}
+            <option value="">{sleepLeft != null ? "Cancel" : "Sleep"}</option>
+            {SLEEP_CHOICES.map((minutes) => (
+              <option key={minutes} value={minutes}>
+                {minutes} min
+              </option>
+            ))}
+          </select>
+        </label>
         <button type="button" className="transport" onClick={() => setDressing((value) => !value)} aria-expanded={dressing}>
           Skin
         </button>
@@ -397,7 +427,7 @@ export function Winamp({ onAir, motion, sleepFade }: { onAir: boolean; motion: b
         <p className="m-0 text-xs tracking-widest uppercase">{track ? "Plugged in" : "Jack empty"}</p>
         <p className="lcd-title">{track ? track.name : "Plug in your own music"}</p>
         <p className="m-0 text-sm tabular-nums">
-          {clock(time)} / {seekable ? clock(duration) : "--:--"}
+          {clock(time)} / {seekable || duration === 0 ? clock(duration || 0) : "--:--"}
         </p>
         <div ref={barsRef} className="viz" aria-hidden>
           {Array.from({ length: 24 }, (_, index) => (
@@ -468,8 +498,7 @@ export function Winamp({ onAir, motion, sleepFade }: { onAir: boolean; motion: b
         </p>
       )}
       <p className="mt-2 text-xs" style={{ color: "var(--p-muted)" }}>
-        Your files stay in this browser and are not uploaded. Up to {megabytes(MAX_FILE_BYTES)} per file, {megabytes(MAX_TOTAL_BYTES)} in total. The playlist clears when you
-        leave. On air, the book ducks the music.
+        Your files stay in this browser. They are not uploaded. On air, the book ducks the music.
       </p>
       {showPlaylist && (
         <div className="playlist mt-2">

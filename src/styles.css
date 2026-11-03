@@ -1091,6 +1091,17 @@ body {
 
 .player button.transport:disabled { opacity: 0.45; cursor: default; }
 
+.player select.transport {
+  width: auto;
+  min-height: 2rem;
+  padding: 0 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--p-edge);
+  background: color-mix(in oklab, var(--p-face) 70%, black);
+  color: var(--p-text);
+  font: 600 0.72rem/1 var(--font-sans);
+}
+
 .sleep {
   display: inline-flex;
   align-items: center;

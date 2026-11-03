@@ -107,7 +107,7 @@ function LeafBody({
             {status === "ready" && pageCount === 0 && "This edition has no readable text on the shelf. Go back to the catalog and try another book."}
             {status === "ready" &&
               pageCount > 0 &&
-              `${words.toLocaleString()} words on ${pageCount.toLocaleString()} pages. The type is set. Turn the leaf from the spine, flick the page sideways, or use the arrow keys.`}
+              `${words.toLocaleString()} words on ${pageCount.toLocaleString()} pages. The type is set. Turn the leaf from the spine.`}
             {status === "idle" && "Waiting on the shelf."}
           </p>
           {status === "ready" && truncated && (

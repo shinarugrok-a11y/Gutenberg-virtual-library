@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { BookOpen, Headphones, Library, Moon, Radio, ScrollText } from "lucide-react";
+import { BookOpen, Headphones, Library, Radio, ScrollText } from "lucide-react";
 import { fetchBookText, searchShelf, spinDial } from "@/lib/catalog.functions";
 import { flushDesk, useDesk } from "@/lib/desk-store";
 import { frequency, type Card, type Order } from "@/lib/shelf";
@@ -12,8 +12,6 @@ import { AskPanel } from "@/components/ask-panel";
 import { Winamp } from "@/components/winamp";
 
 type Pane = "read" | "tune" | "ask" | "music";
-
-const SLEEP_CHOICES = [15, 30, 45, 60, 90];
 
 export function Desk() {
   const [booted, setBooted] = useState(false);
@@ -173,27 +171,6 @@ export function Desk() {
             <ScrollText className="mr-1 inline size-4" aria-hidden />
             Ask
           </button>
-          <label className="sleep">
-            <Moon className="size-4" aria-hidden />
-            <select
-              className="desk-select compact"
-              aria-label="Sleep timer"
-              value={sleepEnd == null ? "" : "on"}
-              onChange={(event) => {
-                const minutes = Number(event.target.value);
-                setSleepEnd(minutes > 0 ? Date.now() + minutes * 60_000 : null);
-                setClockNow(Date.now());
-              }}
-            >
-              {sleepEnd != null && <option value="on">Lights out in {sleepLeft} min</option>}
-              <option value="">{sleepEnd != null ? "Cancel sleep timer" : "Sleep timer"}</option>
-              {SLEEP_CHOICES.map((minutes) => (
-                <option key={minutes} value={minutes}>
-                  {minutes} minutes
-                </option>
-              ))}
-            </select>
-          </label>
           <button type="button" className={`desk-btn${motionOn ? " is-on" : ""}`} aria-pressed={motionOn} onClick={() => setMotion(!motionOn)}>
             {motionOn ? "Animation on" : "Animation off"}
           </button>
@@ -313,7 +290,16 @@ export function Desk() {
             </div>
           )}
           <div className={pane === "music" ? "block" : "hidden show-wide"}>
-            <Winamp onAir={onAir} motion={motionOn} sleepFade={sleepFade} />
+            <Winamp
+              onAir={onAir}
+              motion={motionOn}
+              sleepFade={sleepFade}
+              sleepLeft={sleepEnd == null ? null : sleepLeft}
+              onSleep={(minutes) => {
+                setSleepEnd(minutes > 0 ? Date.now() + minutes * 60_000 : null);
+                setClockNow(Date.now());
+              }}
+            />
           </div>
         </div>
       </div>
