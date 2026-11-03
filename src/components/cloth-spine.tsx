@@ -26,7 +26,7 @@ function rng(id: number) {
   };
 }
 
-export function bandOf(book: Card) {
+function bandOf(book: Card) {
   const piece = (book.shelf || "")
     .split(";")
     .map((part) => part.replace(/^(Category|Subject|LoC Class):\s*/i, "").trim())

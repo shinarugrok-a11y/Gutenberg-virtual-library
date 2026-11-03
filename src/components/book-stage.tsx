@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type TransitionEvent } from "react";
 import { ChevronLeft, ChevronRight, Download, PenLine } from "lucide-react";
 import type { Card } from "@/lib/shelf";
-import { INKS, downloadText, notesToMarkdown, type Tool } from "@/lib/notes";
+import { INKS, downloadText, notesToMarkdown, type MarginNote, type Tool } from "@/lib/notes";
 import { useDesk } from "@/lib/desk-store";
 import { blockHeight, packLeaves, stableBox, type Block, type Leaf } from "@/lib/text";
 import { BlockView, Flow } from "@/components/typeset";
@@ -12,6 +12,42 @@ import { LANGUAGES, CREDITS } from "@/lib/translate/models";
 import { useTranslation } from "@/lib/translate/use-translation";
 
 type Anim = { dir: 1 | -1; incoming: number; phase: "prep" | "run" };
+
+const SPEECH_LANGS: Record<string, string> = {
+  en: "en-US", fr: "fr-FR", de: "de-DE", es: "es-ES", it: "it-IT", pt: "pt-PT", nl: "nl-NL", fi: "fi-FI", sv: "sv-SE",
+  da: "da-DK", no: "nb-NO", pl: "pl-PL", ru: "ru-RU", el: "el-GR", hu: "hu-HU", la: "it-IT", zh: "zh-CN", ja: "ja-JP",
+  ko: "ko-KR", cs: "cs-CZ", ca: "ca-ES", eo: "eo",
+};
+
+function speechLang(lang: string) {
+  const code = (lang || "en").toLowerCase().split(/[-_;,\s]/)[0] ?? "en";
+  return SPEECH_LANGS[code] ?? code;
+}
+
+/** Spoken pieces with their offsets in the page text, small enough for every speech engine. */
+function speechPieces(text: string, max = 1200): { start: number; text: string }[] {
+  const pieces: { start: number; text: string }[] = [];
+  const re = /[^\n]+(?:\n(?!\n)[^\n]*)*/g;
+  for (const match of text.matchAll(re)) {
+    const para = match[0];
+    const base = match.index ?? 0;
+    let from = 0;
+    while (from < para.length) {
+      let end = Math.min(para.length, from + max);
+      if (end < para.length) {
+        const window = para.slice(from, end);
+        const stop = Math.max(window.lastIndexOf(". "), window.lastIndexOf("! "), window.lastIndexOf("? "), window.lastIndexOf("; "));
+        const space = window.lastIndexOf(" ");
+        if (stop > max * 0.4) end = from + stop + 1;
+        else if (space > max * 0.4) end = from + space;
+      }
+      const piece = para.slice(from, end);
+      if (piece.trim()) pieces.push({ start: base + from, text: piece });
+      from = end;
+    }
+  }
+  return pieces;
+}
 
 function LeafBody({
   card,
@@ -27,6 +63,7 @@ function LeafBody({
   translated,
   target,
   pageHeight,
+  truncated,
 }: {
   card: Card;
   index: number;
@@ -37,8 +74,9 @@ function LeafBody({
   status: string;
   error: string | null;
   ink: ReactNode;
-  comments: string[];
+  comments: Pick<MarginNote, "id" | "text">[];
   translated?: string;
+  truncated?: boolean;
   target?: string;
   pageHeight?: number;
 }) {
@@ -46,8 +84,8 @@ function LeafBody({
   const notes = extra ? (
     <aside className="page-notes" aria-label="Notes on this page">
       {comments.map((comment) => (
-        <p key={comment} className="margin-note">
-          {comment}
+        <p key={comment.id} className="margin-note">
+          {comment.text}
         </p>
       ))}
     </aside>
@@ -66,10 +104,15 @@ function LeafBody({
           <p className="page-prose">
             {status === "loading" && "The pages are coming up from the stacks."}
             {status === "error" && (error || "This text didn't arrive.")}
+            {status === "ready" && pageCount === 0 && "This edition has no readable text on the shelf. Go back to the catalog and try another book."}
             {status === "ready" &&
+              pageCount > 0 &&
               `${words.toLocaleString()} words on ${pageCount.toLocaleString()} pages. The type is set. Turn the leaf from the spine.`}
             {status === "idle" && "Waiting on the shelf."}
           </p>
+          {status === "ready" && truncated && (
+            <p className="page-prose">This edition is very long. Night Desk set the first five million characters, so the ending is not on these pages.</p>
+          )}
           <p className="page-kicker">Public-domain text via Project Gutenberg.</p>
           {notes}
           {ink}
@@ -78,9 +121,9 @@ function LeafBody({
     );
   }
   const opensChapter = leaf?.blocks.some((block) => block.type === "heading" && block.level === 1) ?? false;
-  // Both margin notes and translated prose can overflow the fixed page budget.
+  // Margin notes, translated prose and a single oversized block can all overflow the fixed page budget.
   return (
-    <div className={`page-scroll${extra || translated !== undefined ? " has-extra" : ""}`}>
+    <div className={`page-scroll${extra || translated !== undefined || leaf?.tall ? " has-extra" : ""}`}>
       <div className={`page-inner${extra ? " has-notes" : ""}`}>
         <p className="running-head">{opensChapter ? card.title : leaf?.chapter || card.title}</p>
         {translated !== undefined ? (
@@ -109,6 +152,7 @@ export function BookStage({
   motion,
   status,
   error,
+  truncated,
 }: {
   card: Card;
   blocks: Block[];
@@ -121,6 +165,7 @@ export function BookStage({
   motion: boolean;
   status: "loading" | "ready" | "error" | "idle";
   error: string | null;
+  truncated?: boolean;
 }) {
   const tool = useDesk((s) => s.tool);
   const inkId = useDesk((s) => s.inkId);
@@ -146,6 +191,10 @@ export function BookStage({
   const positionRef = useRef(useDesk.getState().positions[String(card.id)] ?? { anchor: null, leaf: 0, updatedAt: 0 });
   const paginatedRef = useRef(false);
   const resolvedLeafRef = useRef<number | null>(null);
+  const blocksRef = useRef(blocks);
+  blocksRef.current = blocks;
+  const rateRef = useRef(rate);
+  rateRef.current = rate;
   useEffect(() => {
     const root = cardRef.current;
     if (!root) return;
@@ -169,7 +218,8 @@ export function BookStage({
   leavesRef.current = leaves;
   const ink = INKS.find((item) => item.id === inkId) ?? INKS[0]!;
   const strokes = notes?.strokes[String(shown)] ?? [];
-  const translation = useTranslation(card.id, (card.lang || "en").toLowerCase().split("-")[0]!, leaves, shown);
+  const sourceLang = (card.lang || "en").toLowerCase().split(/[-_;,\s]/)[0] || "en";
+  const translation = useTranslation(card.id, sourceLang, leaves, shown);
   const plains = useMemo(() => leaves.map((item) => item.plain), [leaves]);
 
   useEffect(() => {
@@ -178,6 +228,22 @@ export function BookStage({
 
   useEffect(() => {
     if (window.matchMedia("(min-width: 1180px)").matches) setInkOpen(true);
+  }, []);
+
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+      const root = cardRef.current;
+      if (!root || root.offsetParent === null) return;
+      const dir = event.key === "ArrowRight" || event.key === "PageDown" ? 1 : event.key === "ArrowLeft" || event.key === "PageUp" ? -1 : 0;
+      if (!dir) return;
+      event.preventDefault();
+      turnRef.current(dir);
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
   }, []);
 
   useEffect(() => {
@@ -259,20 +325,20 @@ export function BookStage({
     return () => cancelAnimationFrame(id);
   }, [anim]);
 
+  const pinPlace = useCallback((index: number) => {
+    const first = leavesRef.current[index - 1]?.blocks[0];
+    positionRef.current = { anchor: first ? blocksRef.current.indexOf(first) : null, leaf: index, updatedAt: Date.now() };
+  }, []);
+
   const commit = useCallback((next: number) => {
     pinPlace(next);
     setAnim(null);
     setPending(next);
     onLeaf(next);
-  }, [onLeaf, blocks]);
-
-  function pinPlace(index: number) {
-    const first = leavesRef.current[index - 1]?.blocks[0];
-    positionRef.current = { anchor: first ? blocks.indexOf(first) : null, leaf: index, updatedAt: Date.now() };
-  }
+  }, [onLeaf, pinPlace]);
 
   function turn(dir: 1 | -1) {
-    if (anim) return;
+    if (anim || status !== "ready") return;
     const next = shown + dir;
     if (next < 0 || next > last) return;
     if (!motion) {
@@ -304,36 +370,66 @@ export function BookStage({
       setCursor(null);
       return;
     }
-    const text = pageText;
-    if (!text.trim()) return;
+    const pieces = speechPieces(pageText);
+    if (!pieces.length) {
+      // Nothing to say on this leaf (an ornament or plate); move on instead of stalling on air.
+      const timer = window.setTimeout(() => {
+        if (shown < leavesRef.current.length) turnRef.current(1);
+        else onStopAir();
+      }, 600);
+      return () => window.clearTimeout(timer);
+    }
     let stopped = false;
-    const timer = window.setTimeout(() => {
+    const synth = window.speechSynthesis;
+    const lang = speechLang(card.lang);
+    const voice = synth.getVoices().find((item) => item.lang.toLowerCase() === lang.toLowerCase()) ??
+      synth.getVoices().find((item) => item.lang.toLowerCase().startsWith(lang.slice(0, 2).toLowerCase()));
+    const speak = (at: number) => {
       if (stopped) return;
-      const synth = window.speechSynthesis;
-      synth.cancel();
-      const utter = new SpeechSynthesisUtterance(text.slice(0, 8000));
-      utter.rate = rate;
-      const lang =
-        card.lang === "fr" ? "fr-FR" : card.lang === "de" ? "de-DE" : card.lang === "es" ? "es-ES" : card.lang === "it" ? "it-IT" : "en-US";
-      utter.lang = lang;
-      utter.onboundary = (event) => {
-        if (typeof event.charIndex === "number") setCursor(event.charIndex);
-      };
-      utter.onend = () => {
-        if (stopped) return;
+      const piece = pieces[at];
+      if (!piece) {
         setCursor(null);
         if (shown < leavesRef.current.length) turnRef.current(1);
         else onStopAir();
+        return;
+      }
+      const utter = new SpeechSynthesisUtterance(piece.text);
+      utter.rate = rateRef.current;
+      utter.lang = lang;
+      if (voice) utter.voice = voice;
+      utter.onboundary = (event) => {
+        if (!stopped && typeof event.charIndex === "number") setCursor(piece.start + event.charIndex);
+      };
+      utter.onend = () => speak(at + 1);
+      utter.onerror = (event) => {
+        if (stopped || event.error === "interrupted" || event.error === "canceled") return;
+        speak(at + 1);
       };
       synth.speak(utter);
+    };
+    const timer = window.setTimeout(() => {
+      synth.cancel();
+      speak(0);
     }, 70);
+    // Desktop Chrome silently stops long speech after ~15 seconds unless it is nudged.
+    const desktop = !/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const keepAlive = desktop
+      ? window.setInterval(() => {
+          if (synth.speaking && !synth.paused) {
+            synth.pause();
+            synth.resume();
+          }
+        }, 10_000)
+      : 0;
     return () => {
       stopped = true;
       window.clearTimeout(timer);
-      window.speechSynthesis.cancel();
+      if (keepAlive) window.clearInterval(keepAlive);
+      synth.cancel();
     };
     // The spoken page, not the leaf array. A resize must not cancel a sentence that is still on screen.
-  }, [onAir, pageText, rate, card.lang, shown, onStopAir]);
+    // Rate is read per sentence so a speed change does not restart the page.
+  }, [onAir, pageText, card.lang, shown, onStopAir]);
 
   function finish(event: TransitionEvent<HTMLDivElement>) {
     if (event.target !== event.currentTarget || event.propertyName !== "transform") return;
@@ -348,6 +444,26 @@ export function BookStage({
     setPending(next);
     onLeaf(next);
   }
+
+  useEffect(() => {
+    setConfirmClear(false);
+  }, [shown]);
+
+  useEffect(() => {
+    if (!confirmClear) return;
+    const timer = window.setTimeout(() => setConfirmClear(false), 4000);
+    return () => window.clearTimeout(timer);
+  }, [confirmClear]);
+
+  const measureTree = useMemo(
+    () =>
+      blocks.map((block, index) => (
+        <div className="flow-block" data-idx={index} key={index}>
+          {block.type === "break" ? null : <BlockView block={block} spoken={false} />}
+        </div>
+      )),
+    [blocks],
+  );
 
   function inkFor(index: number, interactive: boolean) {
     const pageStrokes = notes?.strokes[String(index)] ?? [];
@@ -365,7 +481,7 @@ export function BookStage({
   }
 
   function face(index: number, interactive: boolean) {
-    const pageComments = (notes?.comments ?? []).filter((comment) => comment.leaf === index).map((comment) => comment.text);
+    const pageComments = (notes?.comments ?? []).filter((comment) => comment.leaf === index);
     return (
       <LeafBody
         card={card}
@@ -380,6 +496,7 @@ export function BookStage({
         target={translation.target}
         pageHeight={cardRef.current?.clientHeight}
         comments={pageComments}
+        truncated={truncated}
         ink={inkFor(index, interactive)}
       />
     );
@@ -432,11 +549,7 @@ export function BookStage({
         )}
         <div className="measure-clip" style={{ width: box.width > 80 ? box.width : 320 }} aria-hidden>
           <div className="page-prose" ref={measureRef} lang={card.lang || "en"}>
-            {blocks.map((block, index) => (
-              <div className="flow-block" data-idx={index} key={index}>
-                {block.type === "break" ? null : <BlockView block={block} spoken={false} />}
-              </div>
-            ))}
+            {measureTree}
           </div>
         </div>
       </div>
@@ -470,7 +583,12 @@ export function BookStage({
           </button>
           <select className="desk-btn" aria-label="Translate" value={translation.target} onChange={(event) => translation.select(event.target.value)}>
             <option value="">Translate</option>
-            {LANGUAGES.map((language) => <option key={language.code} value={language.code}>{language.name}</option>)}
+            {LANGUAGES.map((language) => (
+              <option key={language.code} value={language.code} disabled={language.code === sourceLang}>
+                {language.name}
+                {language.code === sourceLang ? " (book's language)" : ""}
+              </option>
+            ))}
           </select>
           {translation.target && <button type="button" className={`desk-btn${translation.original ? " is-on" : ""}`} aria-pressed={translation.original} onClick={translation.toggle}>Original</button>}
         </div>
@@ -541,12 +659,13 @@ export function BookStage({
               className="row-scroll"
               onSubmit={(event) => {
                 event.preventDefault();
+                if (!draft.trim()) return;
                 addComment(card.id, shown, draft);
                 setDraft("");
               }}
             >
               <input className="desk-field" value={draft} placeholder="A line in the margin, saved with this page" onChange={(event) => setDraft(event.target.value)} maxLength={2000} aria-label="Margin note" />
-              <button type="submit" className="desk-btn is-on">
+              <button type="submit" className="desk-btn is-on" disabled={!draft.trim()}>
                 Save note
               </button>
             </form>

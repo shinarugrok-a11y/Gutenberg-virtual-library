@@ -37,7 +37,8 @@ export function useTranslation(book: number, source: string, leaves: Leaf[], sho
     [],
   );
   useEffect(() => {
-    const id = ++sequence.current;
+    const seq = sequence;
+    const id = ++seq.current;
     setMessage("");
     if (!target || original) {
       worker.current?.postMessage({ cancel: true });
@@ -47,7 +48,7 @@ export function useTranslation(book: number, source: string, leaves: Leaf[], sho
     const index = shown > 0 ? shown : 1;
     const plain = shown > 0 ? text : next;
     if (!plain) return;
-    setMessage("Preparing local translation…");
+    setMessage("Preparing local translation… The first time, this downloads a language pack (roughly 100 MB) and keeps it in this browser.");
     loading.current ??= createWorker().catch((error) => {
       loading.current = null;
       throw error;
@@ -62,7 +63,7 @@ export function useTranslation(book: number, source: string, leaves: Leaf[], sho
           if (event.data.error) setMessage(event.data.error);
           if (typeof event.data.text === "string") {
             if (shown > 0) setResult({ key, text: event.data.text });
-            setMessage("");
+            setMessage(shown > 0 ? "" : "Page 1 is translated. Turn the page to read it.");
             // The only speculative work is the immediately following leaf.
             if (shown > 0 && next)
               current.postMessage({
@@ -92,7 +93,7 @@ export function useTranslation(book: number, source: string, leaves: Leaf[], sho
         if (sequence.current === id) setMessage(`Translation unavailable: ${String(error)}`);
       });
     return () => {
-      ++sequence.current;
+      ++seq.current;
       worker.current?.postMessage({ cancel: true });
     };
   }, [book, source, target, original, shown, text, next, key]);

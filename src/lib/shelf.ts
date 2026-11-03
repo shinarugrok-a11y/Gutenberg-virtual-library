@@ -28,11 +28,12 @@ export type ShelfOk = {
   books: Card[];
   genres: GenreStat[];
   live: boolean;
+  note?: string;
 };
 
 export type ShelfErr = { ok: false; error: string };
 
-export type BookTextOk = { ok: true; id: number; text: string };
+export type BookTextOk = { ok: true; id: number; text: string; truncated?: boolean };
 export type BookTextErr = { ok: false; error: string };
 
 export const PAGE_SIZE = 36;
@@ -48,6 +49,18 @@ export const LANGUAGES: { id: string; label: string }[] = [
   { id: "nl", label: "Dutch" },
   { id: "fi", label: "Finnish" },
   { id: "la", label: "Latin" },
+  { id: "sv", label: "Swedish" },
+  { id: "da", label: "Danish" },
+  { id: "no", label: "Norwegian" },
+  { id: "pl", label: "Polish" },
+  { id: "ru", label: "Russian" },
+  { id: "el", label: "Greek" },
+  { id: "hu", label: "Hungarian" },
+  { id: "cs", label: "Czech" },
+  { id: "ca", label: "Catalan" },
+  { id: "eo", label: "Esperanto" },
+  { id: "tl", label: "Tagalog" },
+  { id: "ja", label: "Japanese" },
   { id: "zh", label: "Chinese" },
 ];
 

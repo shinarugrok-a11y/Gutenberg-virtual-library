@@ -3,6 +3,15 @@ import { flushDeskSave } from "@/lib/desk-store";
 import { eraseNear, type Stroke, type Tool } from "@/lib/notes";
 
 type Live = (Omit<Stroke, "tool"> & { tool: Tool }) | null;
+// A quick sideways flick anywhere on the page turns it; slower strokes are ink.
+const FLICK_MS = 320;
+const FLICK_PX = 70;
+const MAX_POINTS = 1600;
+
+function strokeId() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 // Shared across page instances, including a page turn immediately after pen use.
 let penActive = false;
 let penUsedAt = 0;
@@ -76,6 +85,7 @@ export function InkLayer({
   const touches = useRef(new Set<number>());
   const multiTouch = useRef(false);
   const edge = useRef<{ id: number; x: number; y: number } | null>(null);
+  const flick = useRef<{ id: number; x: number; y: number; at: number } | null>(null);
   const turnRef = useRef(onTurn);
   turnRef.current = onTurn;
 
@@ -190,6 +200,7 @@ export function InkLayer({
     if (drawing.current !== null || (event.pointerType === "mouse" && event.button !== 0)) return;
     event.preventDefault();
     drawing.current = event.pointerId;
+    flick.current = event.pointerType === "touch" ? { id: event.pointerId, x: event.clientX, y: event.clientY, at: performance.now() } : null;
     if (event.nativeEvent.isTrusted) event.currentTarget.setPointerCapture(event.pointerId);
     if (tool === "eraser" && event.pointerType !== "touch") {
       const point = pointOf(event);
@@ -197,10 +208,7 @@ export function InkLayer({
       strokesRef.current = next;
       onChange(next);
     }
-    setLive({
-      id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-      tool, color, size, points: [pointOf(event)],
-    });
+    setLive({ id: strokeId(), tool, color, size, points: [pointOf(event)] });
   }
 
   function move(event: PointerEvent<HTMLCanvasElement>) {
@@ -222,7 +230,15 @@ export function InkLayer({
       return;
     }
     const last = current.points[current.points.length - 1]!;
-    if ((last.x - point.x) ** 2 + (last.y - point.y) ** 2 < 0.000004 || current.points.length > 1600) return;
+    if ((last.x - point.x) ** 2 + (last.y - point.y) ** 2 < 0.000004) return;
+    if (current.points.length >= MAX_POINTS) {
+      // Bank the long stroke and keep drawing from the same spot.
+      const next = [...strokesRef.current, current as Stroke];
+      strokesRef.current = next;
+      onChange(next);
+      setLive({ ...current, id: strokeId(), points: [last, point] });
+      return;
+    }
     const jitter = current.tool === "pencil" ? (Math.random() - 0.5) * 0.004 : 0;
     setLive({ ...current, points: [...current.points, { x: point.x + jitter, y: point.y + jitter }] });
   }
@@ -233,9 +249,20 @@ export function InkLayer({
     if (edge.current?.id === event.pointerId && !multiTouch.current) finishSwipe(event.clientX, event.clientY);
     if (drawing.current === event.pointerId) {
       const current = liveRef.current;
+      const start = flick.current;
+      flick.current = null;
       // Clear synchronously before publishing; React rendering must not own commits.
       drawing.current = null;
       setLive(null);
+      if (start && start.id === event.pointerId && !multiTouch.current) {
+        const dx = event.clientX - start.x;
+        const dy = event.clientY - start.y;
+        if (performance.now() - start.at <= FLICK_MS && Math.abs(dx) >= FLICK_PX && Math.abs(dx) > Math.abs(dy) * 2) {
+          if (!touches.current.size) multiTouch.current = false;
+          turnRef.current(dx < 0 ? 1 : -1);
+          return;
+        }
+      }
       if (current && (current.points.length > 1 || current.tool === "eraser")) {
         if (current.tool === "eraser") {
           let next = strokesRef.current;
@@ -256,7 +283,7 @@ export function InkLayer({
   function cancel(event: PointerEvent<HTMLCanvasElement>) {
     if (event.pointerType === "pen") { penActive = false; penUsedAt = Date.now(); }
     touches.current.delete(event.pointerId);
-    if (drawing.current === event.pointerId) { drawing.current = null; setLive(null); }
+    if (drawing.current === event.pointerId) { drawing.current = null; flick.current = null; setLive(null); }
     // Keep the edge origin until touchend: native panning cancels pointer events.
   }
 
