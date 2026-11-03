@@ -84,6 +84,8 @@ export function Winamp({ onAir, motion, sleepFade }: { onAir: boolean; motion: b
   const tracksRef = useRef(tracks);
   const indexRef = useRef(index);
   const failuresRef = useRef(0);
+  const brokenRef = useRef(new Set<string>());
+  const [broken, setBroken] = useState<ReadonlySet<string>>(new Set());
   tracksRef.current = tracks;
   indexRef.current = index;
 
@@ -150,6 +152,10 @@ export function Winamp({ onAir, motion, sleepFade }: { onAir: boolean; motion: b
       await audio.play();
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
+      if (error instanceof DOMException && error.name === "NotSupportedError") {
+        reportBroken(true);
+        return;
+      }
       setPlaying(false);
       setNotice("The browser would not start playback. Press play again.");
     }
@@ -194,17 +200,25 @@ export function Winamp({ onAir, motion, sleepFade }: { onAir: boolean; motion: b
       }
       load(next, true);
     };
-    audio.onerror = () => {
-      const list = tracksRef.current;
-      const bad = list[indexRef.current];
-      setPlaying(false);
-      setNotice(`${bad ? `“${bad.name}”` : "That file"} could not be played. It may be damaged or in a format this browser does not support.`);
-      failuresRef.current += 1;
-      if (failuresRef.current >= list.length) return;
-      const next = nextIndex(indexRef.current, true);
-      if (next != null && next !== indexRef.current) load(next, true);
-    };
+    audio.onerror = () => reportBroken(!audio.paused || playing);
   });
+
+  function reportBroken(advance: boolean) {
+    const list = tracksRef.current;
+    const bad = list[indexRef.current];
+    setPlaying(false);
+    if (bad && !brokenRef.current.has(bad.id)) {
+      brokenRef.current.add(bad.id);
+      setBroken(new Set(brokenRef.current));
+    }
+    setNotice(`${bad ? `“${bad.name}”` : "That file"} can't be played. It may be damaged or in a format this browser does not support.`);
+    if (!advance) return;
+    failuresRef.current += 1;
+    if (failuresRef.current >= list.length) return;
+    const next = list.findIndex((track, i) => i > indexRef.current && !brokenRef.current.has(track.id));
+    const wrap = next >= 0 ? next : list.findIndex((track) => !brokenRef.current.has(track.id));
+    if (wrap >= 0 && wrap !== indexRef.current) load(wrap, true);
+  }
 
   useEffect(() => {
     if (gainRef.current) gainRef.current.gain.value = volume * (onAir ? 0.28 : 1) * fade;
@@ -343,6 +357,10 @@ export function Winamp({ onAir, motion, sleepFade }: { onAir: boolean; motion: b
       load(Math.min(index, tracks.length - 1), true);
       return;
     }
+    if (brokenRef.current.has(tracks[index]?.id ?? "")) {
+      reportBroken(true);
+      return;
+    }
     if (audio.ended) audio.currentTime = 0;
     setNotice("");
     await start(audio);
@@ -403,7 +421,7 @@ export function Winamp({ onAir, motion, sleepFade }: { onAir: boolean; motion: b
           setTime(audio.currentTime);
         }}
       />
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-1">
+      <div className="transport-row mt-2 flex flex-wrap items-center justify-between gap-1">
         <button type="button" className={`transport${shuffle ? " is-on" : ""}`} aria-pressed={shuffle} aria-label="Shuffle" onClick={() => setShuffle((value) => !value)}>
           <Shuffle className="size-4" />
         </button>
@@ -459,6 +477,7 @@ export function Winamp({ onAir, motion, sleepFade }: { onAir: boolean; motion: b
             <div key={item.id} className={`playlist-row${i === index ? " is-on" : ""}`}>
               <button type="button" className={i === index ? "is-on" : ""} aria-current={i === index ? "true" : undefined} onClick={() => (i === index ? void toggle() : go(i))}>
                 {i + 1}. {item.name}
+                {broken.has(item.id) ? " — can't play" : ""}
               </button>
               <button type="button" className="playlist-remove" aria-label={`Remove ${item.name}`} onClick={() => remove(i)}>
                 <X className="size-3.5" aria-hidden />

@@ -1159,3 +1159,18 @@ body {
   border-bottom: 1px solid var(--color-line);
   background: color-mix(in oklab, var(--color-amber) 12%, var(--color-cabinet));
 }
+
+@media (min-width: 1180px) {
+  .player .transport-row button.transport {
+    min-width: 2.35rem;
+    min-height: 2.35rem;
+    padding: 0;
+    display: grid;
+    place-items: center;
+  }
+}
+
+/* The fixed phone navigation is declared after the first desktop query, so it must be hidden again here. */
+@media (min-width: 1180px) {
+  .tabbar { display: none; }
+}
